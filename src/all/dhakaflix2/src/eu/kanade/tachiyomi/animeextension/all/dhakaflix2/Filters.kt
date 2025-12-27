@@ -9,7 +9,7 @@ object Filters {
         DhakaFlixSelect("Select Category", FilterData.CATEGORIES),
         DhakaFlixSelect("Select Year", FilterData.YEARS),
         DhakaFlixSelect("Select Alphabet / Number", FilterData.ALPHABET),
-        DhakaFlixSelect("Select Language", FilterData.LANGUAGES),
+        DhakaFlixSelect("Select Language", FilterData.LANGUAGES)
     )
 
     fun getUrl(query: String, filters: AnimeFilterList?): String {

@@ -37,15 +37,10 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     override val id: Long = 5181466391484419843L
 
-    private val globalHeaders by lazy {
-        Headers.Builder()
-            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .add("Accept", "*/*")
-            .add("Referer", "$baseUrl/")
-            .build()
-    }
-
-    override fun headersConfig() = globalHeaders
+    override fun headersBuilder() = super.headersBuilder()
+        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .add("Accept", "*/*")
+        .add("Referer", "$baseUrl/")
 
     // Optimization: Parallel Search
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
@@ -75,14 +70,15 @@ class DhakaFlix2 : AnimeHttpSource() {
         
         val request = POST(searchUrl, headers, body)
         return try {
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).execute().use {
+                response ->
                 val bodyString = response.body?.string() ?: return emptyList()
-                val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+                val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
                 val matcher = pattern.matcher(bodyString)
                 val list = mutableListOf<SAnime>()
                 
                 while (matcher.find()) {
-                    var href = matcher.group(1).replace("\", "/").replace("/+".toRegex(), "/")
+                    var href = matcher.group(1).replace("\\", "/").replace("/+".toRegex(), "/")
                     while (href.endsWith("/") && href.length > 1) {
                         href = href.substring(0, href.length - 1)
                     }
@@ -346,7 +342,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         }.reversed()
     }
 
-    override fun getVideoList(episode: SEpisode): List<Video> {
+    override suspend fun getVideoList(episode: SEpisode): List<Video> {
         return listOf(Video(episode.url, "Video", episode.url))
     }
 
@@ -362,6 +358,6 @@ class DhakaFlix2 : AnimeHttpSource() {
     )
 
     companion object {
-        private val sizeRegex = "(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*\".toRegex()
+        private val sizeRegex = "(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*".toRegex()
     }
 }
