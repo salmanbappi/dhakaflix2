@@ -1,9 +1,8 @@
 ext {
     extName = 'DhakaFlix 2'
     extClass = '.DhakaFlix2'
-    themePkg = 'dhakaflix2'
     baseUrl = 'http://172.16.50.9'
-    overrideVersionCode = 1
+    extVersionCode = 1
 }
 
 apply from: "$rootDir/common.gradle"
