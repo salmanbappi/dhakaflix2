@@ -1,11 +1,6 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlinx-serialization'
-apply plugin: 'org.jmailen.kotlinter'
-
-kotlinter {
-    ignoreFailures = true
-}
 
 assert !ext.has("pkgNameSuffix")
 assert !ext.has("libVersion")
@@ -146,7 +141,7 @@ tasks.register("writeManifestFile") {
     }
 }
 
-preBuild.dependsOn(writeManifestFile, lintKotlin)
+preBuild.dependsOn(writeManifestFile)
 if (System.getenv("CI") != "true") {
-    lintKotlin.dependsOn(formatKotlin)
+    // lintKotlin.dependsOn(formatKotlin)
 }
