@@ -70,15 +70,14 @@ class DhakaFlix2 : AnimeHttpSource() {
         
         val request = POST(searchUrl, headers, body)
         return try {
-            client.newCall(request).execute().use {
-                response ->
+            client.newCall(request).execute().use { response ->
                 val bodyString = response.body?.string() ?: return emptyList()
-                val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+                val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
                 val matcher = pattern.matcher(bodyString)
                 val list = mutableListOf<SAnime>()
                 
                 while (matcher.find()) {
-                    var href = matcher.group(1).replace("\\", "/").replace("/+".toRegex(), "/")
+                    var href = matcher.group(1).replace("\\\\", "/").replace("/+".toRegex(), "/")
                     while (href.endsWith("/") && href.length > 1) {
                         href = href.substring(0, href.length - 1)
                     }
@@ -194,7 +193,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                 val img = document.select("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
                 var thumb = img.attr("abs:src")
                 if (thumb.isEmpty()) {
-                    thumb = document.select("a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])").attr("abs:href")
+                    thumb = document.select("a[href~=(?i)\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])").attr("abs:href")
                 }
                 thumbnail_url = thumb
             }
@@ -358,6 +357,6 @@ class DhakaFlix2 : AnimeHttpSource() {
     )
 
     companion object {
-        private val sizeRegex = "(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*".toRegex()
+        private val sizeRegex = "(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*\".toRegex()
     }
 }
