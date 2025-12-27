@@ -82,7 +82,11 @@ class DhakaFlix2 : AnimeHttpSource() {
                         href = href.substring(0, href.length - 1)
                     }
                     
-                    val title = try { URLDecoder.decode(href.substringAfterLast("/"), "UTF-8").trim() } catch (e: Exception) { "" } 
+                    val title = try {
+                        URLDecoder.decode(href.substringAfterLast("/"), "UTF-8").trim()
+                    } catch (e: Exception) {
+                        ""
+                    }
                     if (title.isEmpty()) continue
                     
                     val anime = SAnime.create().apply {
@@ -285,7 +289,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         return episodes
     }
 
-    private suspend fun parseDirectoryRecursive(document: Document, depth: Int, episodes: MutableList<SEpisode>, visited: MutableSetOf<String>) {
+    private suspend fun parseDirectoryRecursive(document: Document, depth: Int, episodes: MutableList<SEpisode>, visited: MutableSet<String>) {
         val currentUrl = document.location()
         visited.add(currentUrl)
 
@@ -357,6 +361,6 @@ class DhakaFlix2 : AnimeHttpSource() {
     )
 
     companion object {
-        private val sizeRegex = "(\d+\.\d+ [GM]B|\d+ [GM]B).*\".toRegex()
+        private val sizeRegex = ".*(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*" toRegex()
     }
 }
