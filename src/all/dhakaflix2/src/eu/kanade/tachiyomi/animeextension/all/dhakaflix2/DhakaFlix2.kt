@@ -70,9 +70,10 @@ class DhakaFlix2 : AnimeHttpSource() {
         
         val request = POST(searchUrl, headers, body)
         return try {
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).execute().use {
+                response ->
                 val bodyString = response.body?.string() ?: return emptyList()
-                val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+                val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
                 val matcher = pattern.matcher(bodyString)
                 val list = mutableListOf<SAnime>()
                 
