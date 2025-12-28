@@ -16,6 +16,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Cookie
 import okhttp3.Headers
 import okhttp3.HttpUrl
@@ -89,28 +90,30 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         if (query.isNotEmpty()) {
-            return coroutineScope {
-                val servers = listOf(
-                    "http://172.16.50.14" to "DHAKA-FLIX-14",
-                    "http://172.16.50.12" to "DHAKA-FLIX-12",
-                    "http://172.16.50.9" to "DHAKA-FLIX-9",
-                    "http://172.16.50.7" to "DHAKA-FLIX-7"
-                )
+            return withTimeoutOrNull(20000) { // 20s timeout for global search
+                coroutineScope {
+                    val servers = listOf(
+                        "http://172.16.50.14" to "DHAKA-FLIX-14",
+                        "http://172.16.50.12" to "DHAKA-FLIX-12",
+                        "http://172.16.50.9" to "DHAKA-FLIX-9",
+                        "http://172.16.50.7" to "DHAKA-FLIX-7"
+                    )
 
-                val results = servers.map { server ->
-                    async(Dispatchers.IO) {
-                        val serverResults = mutableListOf<SAnime>()
-                        try {
-                            searchOnServer(server.first, server.second, query, serverResults)
-                        } catch (e: Exception) {
-                            // Ignore failure for individual server
+                    val results = servers.map { server ->
+                        async(Dispatchers.IO) {
+                            val serverResults = mutableListOf<SAnime>()
+                            try {
+                                searchOnServer(server.first, server.second, query, serverResults)
+                            } catch (e: Exception) {
+                                // Ignore failure for individual server
+                            }
+                            serverResults
                         }
-                        serverResults
-                    }
-                }.awaitAll().flatten().distinctBy { it.url }
+                    }.awaitAll().flatten().distinctBy { it.url }
 
-                AnimesPage(sortByTitle(results, query), false)
-            }
+                    AnimesPage(sortByTitle(results, query), false)
+                }
+            } ?: AnimesPage(emptyList(), false)
         }
         return super.getSearchAnime(page, query, filters)
     }
@@ -301,21 +304,23 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
         return withContext(Dispatchers.IO) {
-            val response = client.newCall(GET(fixUrl(anime.url), headers)).execute()
-            val document = response.asJsoup()
-            val mediaType = getMediaType(document)
+            withTimeoutOrNull(30000) { // 30s timeout for episode loading
+                val response = client.newCall(GET(fixUrl(anime.url), headers)).execute()
+                val document = response.asJsoup()
+                val mediaType = getMediaType(document)
 
-            val episodes = when (mediaType) {
-                "s" -> {
-                    val extracted = extractEpisodes(document)
-                    if (extracted.isNotEmpty()) sortEpisodes(extracted) else parseDirectoryParallel(document)
+                val episodes = when (mediaType) {
+                    "s" -> {
+                        val extracted = extractEpisodes(document)
+                        if (extracted.isNotEmpty()) sortEpisodes(extracted) else parseDirectoryParallel(document)
+                    }
+                    "m" -> getMovieMedia(document)
+                    else -> parseDirectoryParallel(document)
                 }
-                "m" -> getMovieMedia(document)
-                else -> parseDirectoryParallel(document)
-            }
 
-            if (episodes.isEmpty()) throw Exception("No results found")
-            episodes
+                if (episodes.isEmpty()) throw Exception("No results found")
+                episodes
+            } ?: emptyList()
         }
     }
 
