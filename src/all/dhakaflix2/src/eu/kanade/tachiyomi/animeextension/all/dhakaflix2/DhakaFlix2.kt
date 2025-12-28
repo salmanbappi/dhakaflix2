@@ -10,6 +10,8 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -78,11 +80,11 @@ class DhakaFlix2 : AnimeHttpSource() {
                     "http://172.16.50.7/" to "DHAKA-FLIX-7"
                 )
 
-                val results = servers.map { (url, serverName) ->
+                val results = servers.map { server ->
                     async(Dispatchers.IO) {
                         val serverResults = mutableListOf<SAnime>()
                         try {
-                            searchOnServer(url, serverName, query, serverResults)
+                            searchOnServer(server.first, server.second, query, serverResults)
                         } catch (e: Exception) {
                             // Ignore failure for individual server
                         }
