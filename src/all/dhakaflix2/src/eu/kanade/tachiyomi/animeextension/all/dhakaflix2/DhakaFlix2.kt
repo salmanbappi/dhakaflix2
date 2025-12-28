@@ -98,11 +98,20 @@ class DhakaFlix2 : AnimeHttpSource() {
                     this.title = title
                     val finalUrl = if (href.endsWith("/")) href else "$href/"
                     
-                    if (finalUrl.startsWith("http")) {
+                    if (finalUrl.lowercase().startsWith("http")) {
                         this.url = finalUrl
                     } else {
                         val cleanHref = if (finalUrl.startsWith("/")) finalUrl else "/$finalUrl"
                         this.url = "$hostUrl$cleanHref"
+                    }
+                    
+                    // Explicitly fix the reported malformed URL case
+                    if (this.url.contains("172.16.50.9http")) {
+                        this.url = this.url.replace("172.16.50.9http", "172.16.50.9/")
+                    }
+                    // Fix double http:// if present
+                    if (this.url.contains("http://http://")) {
+                        this.url = this.url.replace("http://http://", "http://")
                     }
                     
                     val thumbSuffix = if (serverName.contains("9")) "a11.jpg" else "a_AL_.jpg"
@@ -153,6 +162,10 @@ class DhakaFlix2 : AnimeHttpSource() {
                     animeList.add(SAnime.create().apply {
                         this.title = title
                         this.url = url
+                        // Check for malformed host in popular parse as well
+                        if (this.url.contains("172.16.50.9http")) {
+                            this.url = this.url.replace("172.16.50.9http", "172.16.50.9/")
+                        }
                         val img = card.select("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
                         this.thumbnail_url = (img.attr("abs:data-src").takeIf { it.isNotEmpty() }
                             ?: img.attr("abs:data-lazy-src").takeIf { it.isNotEmpty() }
@@ -168,6 +181,10 @@ class DhakaFlix2 : AnimeHttpSource() {
                     animeList.add(SAnime.create().apply {
                         this.title = if (title.endsWith("/")) title.dropLast(1) else title
                         this.url = url
+                        // Check for malformed host
+                        if (this.url.contains("172.16.50.9http")) {
+                            this.url = this.url.replace("172.16.50.9http", "172.16.50.9/")
+                        }
                         val finalUrl = if (url.endsWith("/")) url else "$url/"
                         this.thumbnail_url = "${finalUrl}a_AL_.jpg".replace(" ", "%20")
                     })
