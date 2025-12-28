@@ -28,6 +28,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import java.net.URLDecoder
+import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 import kotlin.text.RegexOption
 
@@ -42,6 +43,15 @@ class DhakaFlix2 : AnimeHttpSource() {
     override val supportsLatest = true
 
     override val id: Long = 5181466391484419843L
+
+    override val client: OkHttpClient = super.client.newBuilder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .dispatcher(okhttp3.Dispatcher().apply {
+            maxRequests = 100
+            maxRequestsPerHost = 100
+        })
+        .build()
 
     private val cm by lazy { CookieManager(client) }
 
@@ -334,18 +344,18 @@ class DhakaFlix2 : AnimeHttpSource() {
         })
     }
 
-    private val semaphore = Semaphore(5)
+    private val semaphore = Semaphore(50)
 
     private suspend fun parseDirectoryParallel(document: Document): List<SEpisode> {
         val episodes = java.util.Collections.synchronizedList(mutableListOf<SEpisode>())
         val visited = java.util.Collections.synchronizedSet(mutableSetOf<String>())
         parseDirectoryRecursive(document, 3, episodes, visited)
-        return episodes.toList()
+        return episodes.toList().sortedBy { it.name }.reversed()
     }
 
     private suspend fun parseDirectoryRecursive(document: Document, depth: Int, episodes: MutableList<SEpisode>, visited: MutableSet<String>) {
         val currentUrl = document.location()
-        visited.add(currentUrl)
+        if (!visited.add(currentUrl)) return
 
         val links = document.select("a[href]")
         val (files, dirs) = links.map { it to it.attr("abs:href") }
@@ -355,7 +365,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         files.forEach { (element, absHref) ->
             episodes.add(SEpisode.create().apply {
                 this.url = absHref
-                this.name = element.text()
+                this.name = element.text().trim()
                 this.episode_number = -1f
             })
             visited.add(absHref)
@@ -383,7 +393,7 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     private fun isVideoFile(href: String): Boolean {
         val h = href.lowercase()
-        return listOf(".mkv", ".mp4", ".avi", ".ts", ".m4v", ".webm", ".mov").any { h.contains(it) }
+        return listOf(".mkv", ".mp4", ".avi", ".ts", ".m4v", ".webm", ".mov").any { h.endsWith(it) || h.contains("$it?") }
     }
 
     private fun sortEpisodes(list: List<EpisodeData>): List<SEpisode> {
@@ -391,7 +401,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         return list.map {
             SEpisode.create().apply {
                 url = it.videoUrl
-                name = "${it.seasonEpisode} - ${it.episodeName}"
+                name = "${it.seasonEpisode} - ${it.episodeName}".trim()
                 episode_number = ++episodeCount
                 scanlator = "${it.quality}  ${it.size}"
             }
@@ -415,14 +425,15 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     class CookieManager(private val client: OkHttpClient) {
         private val cookieUrl = "http://172.16.50.9/".toHttpUrl()
+        @Volatile
         private var cookies: List<Cookie>? = null
         private val lock = Any()
 
         fun getCookiesHeaders(): String {
-            val currentCookies = synchronized(lock) {
+            val c = cookies ?: synchronized(lock) {
                 cookies ?: fetchCookies().also { cookies = it }
             }
-            return currentCookies.joinToString("; ") { "${it.name}=${it.value}" }
+            return c.joinToString("; ") { "${it.name}=${it.value}" }
         }
 
         private fun fetchCookies(): List<Cookie> {
