@@ -23,6 +23,7 @@ import okhttp3.Response
 import org.jsoup.nodes.Document
 import java.net.URLDecoder
 import java.util.regex.Pattern
+import kotlin.text.RegexOption
 
 class DhakaFlix2 : AnimeHttpSource() {
 
@@ -102,11 +103,11 @@ class DhakaFlix2 : AnimeHttpSource() {
             val bodyString = it.body?.string() ?: return
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
-                var href = matcher.group(1).replace("\", "/").trim()
+                var href = matcher.group(1).replace("\\", "/").trim()
                 
                 val rawTitle = href.substringAfterLast("/")
                 val title = try {
@@ -393,6 +394,6 @@ class DhakaFlix2 : AnimeHttpSource() {
     )
 
     companion object {
-        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*\")
+        private val sizeRegex = Regex("""(\d+\.\d+ [GM]B|\d+ [GM]B).*""")
     }
 }
