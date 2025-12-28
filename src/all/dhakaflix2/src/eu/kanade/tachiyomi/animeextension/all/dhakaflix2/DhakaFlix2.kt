@@ -56,10 +56,10 @@ class DhakaFlix2 : AnimeHttpSource() {
         }
         
         // Correct malformed hostname error (e.g. 172.16.50.9http -> 172.16.50.9/http)
-        u = u.replace(Regex("(\\d{1,3}\\.\\d{1,3}\\.\d{1,3}\\.\d{1,3})\\s*http", RegexOption.IGNORE_CASE), "$1/http")
+        u = u.replace(Regex(\"(\\d{1,3}\\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http\", RegexOption.IGNORE_CASE), "$1/http")
         
         // Remove double protocol prefix
-        u = u.replace(Regex("http(s)?:\\/\\/http(s)?:\\/\\/", RegexOption.IGNORE_CASE), "http$1://")
+        u = u.replace(Regex(\"http(s)?://http(s)?://\", RegexOption.IGNORE_CASE), "http$1://")
         
         // Normalize slashes
         u = u.replace(":://://", ":://")
@@ -99,15 +99,15 @@ class DhakaFlix2 : AnimeHttpSource() {
         val body = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
         
         val request = POST(searchUrl, headers, body)
-        client.newCall(request).execute().use {
-            val bodyString = it.body?.string() ?: return
+        client.newCall(request).execute().use { response ->
+            val bodyString = response.body?.string() ?: return
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile(\""href\":\"([^\"]+)\"[^}]*\"size\":null\", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
-                var href = matcher.group(1).replace("\\", "/").trim()
+                var href = matcher.group(1).replace("\", "/").trim()
                 
                 // Fix: Remove trailing slash before extracting title
                 val cleanHrefForTitle = if (href.endsWith("/")) href.dropLast(1) else href
@@ -238,7 +238,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                 val img = document.select("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
                 var thumb = img.attr("abs:src")
                 if (thumb.isEmpty()) {
-                    thumb = document.select("a[href~=(?i)\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])").attr("abs:href")
+                    thumb = document.select("a[href~=(?i)\\.jpg|jpeg|png|webp]:not([href~=(?i)back|folder|parent|icon])").attr("abs:href")
                 }
                 thumbnail_url = fixUrl(thumb)
             }
@@ -298,7 +298,7 @@ class DhakaFlix2 : AnimeHttpSource() {
             val name = rawTitle.split("&nbsp;").first().trim()
             val url = fixUrl(element.select("h5 a").attr("abs:href").trim())
             val qualityText = element.select("h5 .badge-fill").text()
-            val quality = qualityText?.let { sizeRegex.replace(it, "$1").trim() } ?: ""
+            val quality = if (qualityText != null) sizeRegex.replace(qualityText, "$1").trim() else ""
             val epName = element.select("h4").firstOrNull()?.ownText()?.trim() ?: ""
             val size = element.select("h4 .badge-outline").firstOrNull()?.text()?.trim() ?: ""
             
@@ -373,12 +373,12 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     private fun sortEpisodes(list: List<EpisodeData>): List<SEpisode> {
         var episodeCount = 0f
-        return list.map { data ->
+        return list.map {
             SEpisode.create().apply {
-                url = data.videoUrl
-                name = "${data.seasonEpisode} - ${data.episodeName}"
+                url = it.videoUrl
+                name = "${it.seasonEpisode} - ${it.episodeName}"
                 episode_number = ++episodeCount
-                scanlator = "${data.quality}  ${data.size}"
+                scanlator = "${it.quality}  ${it.size}"
             }
         }.reversed()
     }
@@ -399,6 +399,6 @@ class DhakaFlix2 : AnimeHttpSource() {
     )
 
     companion object {
-        private val sizeRegex = Regex("""(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*""")
+        private val sizeRegex = Regex(\"(\\d+\\.{\\d+} [GM]B|\\d+ [GM]B).*\")
     }
 }
