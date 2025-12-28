@@ -70,8 +70,7 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         if (query.isNotEmpty()) {
-            return withContext(Dispatchers.IO) {
-                val results = mutableListOf<SAnime>()
+            return coroutineScope {
                 val servers = listOf(
                     "http://172.16.50.14/" to "DHAKA-FLIX-14",
                     "http://172.16.50.12/" to "DHAKA-FLIX-12",
@@ -79,13 +78,17 @@ class DhakaFlix2 : AnimeHttpSource() {
                     "http://172.16.50.7/" to "DHAKA-FLIX-7"
                 )
 
-                for ((url, serverName) in servers) {
-                    try {
-                        searchOnServer(url, serverName, query, results)
-                    } catch (e: Exception) {
-                        // Continue to next server on failure
+                val results = servers.map { (url, serverName) ->
+                    async(Dispatchers.IO) {
+                        val serverResults = mutableListOf<SAnime>()
+                        try {
+                            searchOnServer(url, serverName, query, serverResults)
+                        } catch (e: Exception) {
+                            // Ignore failure for individual server
+                        }
+                        serverResults
                     }
-                }
+                }.awaitAll().flatten().distinctBy { it.url }
 
                 AnimesPage(sortByTitle(results, query), false)
             }
@@ -94,20 +97,31 @@ class DhakaFlix2 : AnimeHttpSource() {
     }
 
     private fun searchOnServer(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>) {
-        val searchUrl = "${serverUrl}${serverName}/"
-        val jsonPayload = "{\"action\":\"get\",\"search\":{\"href\":\"/${serverName}/\",\"pattern\":\"$query\",\"ignorecase\":true}}"
+        val searchUrl = fixUrl("${serverUrl}${serverName}/")
+        val escapedQuery = query.replace("\\", "\\\\").replace("\"", "\\\"")
+        val jsonPayload = """{"action":"get","search":{"href":"/$serverName/","pattern":"$escapedQuery","ignorecase":true}}"""
         val body = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
         
-        val request = POST(searchUrl, headers, body)
+        val searchHeaders = headers.newBuilder()
+            .set("Referer", searchUrl)
+            .build()
+            
+        val request = POST(searchUrl, searchHeaders, body)
         client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return
             val bodyString = response.body?.string() ?: return
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile(""""href":"([^"]+)"[^}]*"size":null""", Pattern.CASE_INSENSITIVE)
+            // More robust regex for h5ai JSON items
+            val pattern = Pattern.compile(""""href"\s*:\s*"([^"]+)"[^}]*"size"\s*:\s*(null|\d+)""", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
                 var href = matcher.group(1).replace("\\", "/").trim()
+                val isDirectory = matcher.group(2).equals("null", ignoreCase = true)
+                
+                // Skip common h5ai internal files
+                if (href.contains("/_h5ai/") || href.endsWith("/_h5ai")) continue
                 
                 // Fix: Remove trailing slash before extracting title
                 val cleanHrefForTitle = if (href.endsWith("/")) href.dropLast(1) else href
@@ -118,7 +132,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                 } catch (e: Exception) {
                     rawTitle.trim()
                 }
-                if (title.isEmpty()) continue
+                if (title.isEmpty() || isIgnored(title)) continue
                 
                 val anime = SAnime.create().apply {
                     this.title = title
@@ -131,8 +145,10 @@ class DhakaFlix2 : AnimeHttpSource() {
                     }
                     
                     val thumbSuffix = if (serverName.contains("9")) "a11.jpg" else "a_AL_.jpg"
-                    this.thumbnail_url = fixUrl("${this.url}/$thumbSuffix")
+                    val finalUrl = if (this.url.endsWith("/")) this.url else "${this.url}/"
+                    this.thumbnail_url = fixUrl("${finalUrl}$thumbSuffix")
                 }
+                
                 synchronized(results) {
                     if (results.none { it.url == anime.url }) {
                         results.add(anime)
@@ -140,6 +156,11 @@ class DhakaFlix2 : AnimeHttpSource() {
                 }
             }
         }
+    }
+
+    private fun isIgnored(text: String): Boolean {
+        val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai")
+        return ignored.any { text.contains(it, ignoreCase = true) }
     }
 
     private fun sortByTitle(list: List<SAnime>, query: String): List<SAnime> {
