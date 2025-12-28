@@ -77,7 +77,9 @@ class DhakaFlix2 : AnimeHttpSource() {
                     "http://172.16.50.14/" to "DHAKA-FLIX-14",
                     "http://172.16.50.12/" to "DHAKA-FLIX-12",
                     "http://172.16.50.9/" to "DHAKA-FLIX-9",
-                    "http://172.16.50.7/" to "DHAKA-FLIX-7"
+                    "http://172.16.50.7/" to "DHAKA-FLIX-7",
+                    "http://172.16.50.4/" to "DHAKA-FLIX-4",
+                    "http://172.16.50.2/" to "DHAKA-FLIX-2"
                 )
 
                 val results = servers.map { server ->
@@ -106,6 +108,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         
         val searchHeaders = headers.newBuilder()
             .set("Referer", searchUrl)
+            .set("X-Requested-With", "XMLHttpRequest")
             .build()
             
         val request = POST(searchUrl, searchHeaders, body)
@@ -121,6 +124,9 @@ class DhakaFlix2 : AnimeHttpSource() {
             while (matcher.find()) {
                 var href = matcher.group(1).replace("\\", "/").trim()
                 val isDirectory = matcher.group(2).equals("null", ignoreCase = true)
+                
+                // Only include directories in search results, skip files
+                if (!isDirectory) continue
                 
                 // Skip common h5ai internal files
                 if (href.contains("/_h5ai/") || href.endsWith("/_h5ai")) continue

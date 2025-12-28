@@ -13,7 +13,7 @@ object Filters {
     )
 
     fun getUrl(query: String, filters: AnimeFilterList?): String {
-        if (query.isNotEmpty()) return query
+        if (query.isNotEmpty()) return "http://172.16.50.14/DHAKA-FLIX-14/"
 
         if (filters == null) return "http://172.16.50.14/DHAKA-FLIX-14/Hindi Movies/(2025)/"
 
