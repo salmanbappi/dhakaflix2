@@ -5,7 +5,7 @@ allprojects {
     repositories {
         mavenCentral()
         google()
-        maven(url = "https://jitpack.io")
+        maven { url = uri("https://jitpack.io") }
     }
 
     tasks.withType<KotlinCompile>().configureEach {
