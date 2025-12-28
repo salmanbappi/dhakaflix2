@@ -64,7 +64,7 @@ class DhakaFlix2 : AnimeHttpSource() {
             u = u.substring(lastProtocol)
         }
         
-        u = u.replace(Regex("(\\d{1,3}\\.`\\d{1,3}\\.`\\d{1,3}\\.`\\d{1,3}`)\\s*http", RegexOption.IGNORE_CASE), "$1/http")
+        u = u.replace(Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http", RegexOption.IGNORE_CASE), "$1/http")
         u = u.replace(Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE), "http$1://")
         u = u.replace(":://://", ":://")
         u = u.replace(Regex("(?<!:)/{2,}"), "/")
@@ -113,7 +113,7 @@ class DhakaFlix2 : AnimeHttpSource() {
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
-                var href = matcher.group(1).replace('\', '/').trim()
+                var href = matcher.group(1).replace('\\', '/').trim()
                 href = href.replace(Regex("/+"), "/")
                 
                 var cleanHrefForTitle = href
