@@ -23,23 +23,76 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build with Gradle
-        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+            - name: Build with Gradle
 
-      - name: Sign APK
-        uses: r0adkll/sign-android-release@v1
-        id: sign_app
-        with:
-          releaseDirectory: src/all/dhakaflix2/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.KEY_STORE }}
-          alias: ${{ secrets.ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: "34.0.0"
+              run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: DhakaFlix2-APK
-          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
+      
+
+            - name: Sign APK
+
+              uses: r0adkll/sign-android-release@v1
+
+              id: sign_app
+
+              with:
+
+                releaseDirectory: src/all/dhakaflix2/build/outputs/apk/release
+
+                signingKeyBase64: ${{ secrets.KEY_STORE }}
+
+                alias: ${{ secrets.ALIAS }}
+
+                keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+
+                keyPassword: ${{ secrets.KEY_PASSWORD }}
+
+              env:
+
+                BUILD_TOOLS_VERSION: "36.0.0"
+
+      
+
+            - name: Upload APK
+
+              uses: actions/upload-artifact@v4
+
+              with:
+
+                name: release-apk
+
+                path: ${{ steps.sign_app.outputs.signedReleaseFile }}
+
+      
+
+            - name: Create Release
+
+              if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+              uses: softprops/action-gh-release@v2
+
+              with:
+
+                tag_name: v14.1257-build${{ github.run_number }}
+
+                name: DhakaFlix 2 v14.1257 Build ${{ github.run_number }}
+
+                body: |
+
+                  ### 🤖 Automated Gemini Build
+
+                  - **Robust Search:** Parallel probing across multiple servers.
+
+                  - **Stability:** Fixed parsing regressions and URL normalization.
+
+                  - **Signing:** Signed with Permanent Key.
+
+                  - **Status:** Build Successful.
+
+                files: ${{ steps.sign_app.outputs.signedReleaseFile }}
+
+              env:
+
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      

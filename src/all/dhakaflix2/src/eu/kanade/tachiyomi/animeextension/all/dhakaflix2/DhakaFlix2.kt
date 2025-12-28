@@ -198,7 +198,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                 val img = document.select("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
                 var thumb = img.attr("abs:src")
                 if (thumb.isEmpty()) {
-                    thumb = document.select("a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])").attr("abs:href")
+                    thumb = document.select("""a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])""").attr("abs:href")
                 }
                 thumbnail_url = thumb.replace(" ", "%20")
             }
@@ -256,8 +256,8 @@ class DhakaFlix2 : AnimeHttpSource() {
             val rawTitle = titleElement.ownText().trim()
             val name = rawTitle.split("&nbsp;").first().trim()
             val url = element.select("h5 a").attr("abs:href").trim()
-            val qualityText = element.select("h5 .badge-fill").text() ?: ""
-            val quality = sizeRegex.replace(qualityText, "$1").trim()
+            val qualityText = element.select("h5 .badge-fill").text()
+            val quality = qualityText?.let { sizeRegex.replace(it, "$1").trim() } ?: ""
             val epName = element.select("h4").firstOrNull()?.ownText()?.trim() ?: ""
             val size = element.select("h4 .badge-outline").firstOrNull()?.text()?.trim() ?: ""
             
