@@ -77,11 +77,11 @@ class DhakaFlix2 : AnimeHttpSource() {
             val bodyString = response.body?.string() ?: return
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
-                var href = matcher.group(1).replace("\", "/").replace(Regex("/+"), "/")
+                var href = matcher.group(1).replace("\\", "/").replace(Regex("/+"), "/")
                 while (href.endsWith("/") && href.length > 1) {
                     href = href.substring(0, href.length - 1)
                 }
@@ -256,9 +256,8 @@ class DhakaFlix2 : AnimeHttpSource() {
             val rawTitle = titleElement.ownText().trim()
             val name = rawTitle.split("&nbsp;").first().trim()
             val url = element.select("h5 a").attr("abs:href").trim()
-            val quality = element.select("h5 .badge-fill").text()?.let { 
-                sizeRegex.replace(it, "$1").trim()
-            } ?: ""
+            val qualityText = element.select("h5 .badge-fill").text() ?: ""
+            val quality = sizeRegex.replace(qualityText, "$1").trim()
             val epName = element.select("h4").firstOrNull()?.ownText()?.trim() ?: ""
             val size = element.select("h4 .badge-outline").firstOrNull()?.text()?.trim() ?: ""
             
@@ -270,8 +269,8 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     private fun getMovieMedia(document: Document): List<SEpisode> {
         val linkElement = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], a[href*=/s/lazyload/], .download-link a").lastOrNull()
-        val url = linkElement?.attr("abs:href")?.replace(" ", "%20") ?: ""
-        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "").trim() ?: ""
+        val url = linkElement?.attr("abs:href")?.let { it.replace(" ", "%20") } ?: ""
+        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
         
         return listOf(SEpisode.create().apply {
             this.url = url
