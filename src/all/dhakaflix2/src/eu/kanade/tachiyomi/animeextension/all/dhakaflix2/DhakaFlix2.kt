@@ -362,6 +362,6 @@ class DhakaFlix2 : AnimeHttpSource() {
     )
 
     companion object {
-        private val sizeRegex = Regex(\"(\\\\d+\\\\.\\d+ [GM]B|\\\\d+ [GM]B).*\")
+        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*")
     }
 }
