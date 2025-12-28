@@ -28,7 +28,7 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     override val name = "DhakaFlix 2"
 
-    override val baseUrl = "http://172.16.50.9"
+    override val baseUrl = "http://172.16.50.9/"
 
     override val lang = "all"
 
@@ -39,17 +39,43 @@ class DhakaFlix2 : AnimeHttpSource() {
     override fun headersBuilder() = super.headersBuilder()
         .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .add("Accept", "*/*")
-        .add("Referer", "$baseUrl/")
+        .add("Referer", fixUrl(baseUrl))
+
+    private fun fixUrl(url: String): String {
+        if (url.isBlank()) return url
+        var u = url.trim()
+        
+        // Handle baseUrl + absoluteUrl concatenation: http://172.16.50.9http://172.16.50.14 -> http://172.16.50.14
+        val lastHttp = u.lastIndexOf("http://", ignoreCase = true)
+        val lastHttps = u.lastIndexOf("https://", ignoreCase = true)
+        val lastProtocol = maxOf(lastHttp, lastHttps)
+        
+        if (lastProtocol > 0) {
+            u = u.substring(lastProtocol)
+        }
+        
+        // Correct malformed hostname error (e.g. 172.16.50.9http -> 172.16.50.9/http)
+        u = u.replace(Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http", RegexOption.IGNORE_CASE), "$1/http")
+        
+        // Remove double protocol prefix
+        u = u.replace(Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE), "http$1://")
+        
+        // Normalize slashes
+        u = u.replace(":://://", ":://")
+        u = u.replace(Regex("(?<!:)/{2,}"), "/")
+        
+        return u.replace(" ", "%20")
+    }
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         if (query.isNotEmpty()) {
             return withContext(Dispatchers.IO) {
                 val results = mutableListOf<SAnime>()
                 val servers = listOf(
-                    "http://172.16.50.14" to "DHAKA-FLIX-14",
-                    "http://172.16.50.12" to "DHAKA-FLIX-12",
-                    "http://172.16.50.9" to "DHAKA-FLIX-9",
-                    "http://172.16.50.7" to "DHAKA-FLIX-7"
+                    "http://172.16.50.14/" to "DHAKA-FLIX-14",
+                    "http://172.16.50.12/" to "DHAKA-FLIX-12",
+                    "http://172.16.50.9/" to "DHAKA-FLIX-9",
+                    "http://172.16.50.7/" to "DHAKA-FLIX-7"
                 )
 
                 for ((url, serverName) in servers) {
@@ -67,21 +93,20 @@ class DhakaFlix2 : AnimeHttpSource() {
     }
 
     private fun searchOnServer(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>) {
-        val searchUrl = "$serverUrl/$serverName/"
-        val jsonPayload = "{\"action\":\"get\",\"search\":{\"href\":\"/$serverName/\",\"pattern\":\"$query\",\"ignorecase\":true}}"
+        val searchUrl = "${serverUrl}${serverName}/"
+        val jsonPayload = "{\"action\":\"get\",\"search\":{\"href\":\"/${serverName}/\",\"pattern\":\"$query\",\"ignorecase\":true}}"
         val body = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
         
         val request = POST(searchUrl, headers, body)
         client.newCall(request).execute().use {
- response ->
-            val bodyString = response.body?.string() ?: return
+            val bodyString = it.body?.string() ?: return
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
-                var href = matcher.group(1).replace("\\", "/").trim()
+                var href = matcher.group(1).replace("\", "/").trim()
                 
                 val rawTitle = href.substringAfterLast("/")
                 val title = try {
@@ -102,7 +127,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                     }
                     
                     val thumbSuffix = if (serverName.contains("9")) "a11.jpg" else "a_AL_.jpg"
-                    this.thumbnail_url = fixUrl("${this.url}/$thumbSuffix").replace(" ", "%20")
+                    this.thumbnail_url = fixUrl("${this.url}/$thumbSuffix")
                 }
                 synchronized(results) {
                     results.add(anime)
@@ -132,7 +157,7 @@ class DhakaFlix2 : AnimeHttpSource() {
     }
 
     override fun popularAnimeRequest(page: Int): Request {
-        return GET("http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/%282025%29/", headers)
+        return GET(fixUrl("http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/%282025%29/"), headers)
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
@@ -148,15 +173,11 @@ class DhakaFlix2 : AnimeHttpSource() {
                 if (title.isNotEmpty() && url.isNotEmpty()) {
                     animeList.add(SAnime.create().apply {
                         this.title = title
-                        this.url = url
-                        // Check for malformed host in popular parse as well
-                        if (this.url.contains("172.16.50.9http")) {
-                            this.url = this.url.replace("172.16.50.9http", "172.16.50.9/")
-                        }
+                        this.url = fixUrl(url)
                         val img = card.select("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
-                        this.thumbnail_url = (img.attr("abs:data-src").takeIf { it.isNotEmpty() }
+                        this.thumbnail_url = fixUrl(img.attr("abs:data-src").takeIf { it.isNotEmpty() } 
                             ?: img.attr("abs:data-lazy-src").takeIf { it.isNotEmpty() }
-                            ?: img.attr("abs:src")).replace(" ", "%20")
+                            ?: img.attr("abs:src"))
                     })
                 }
             }
@@ -167,13 +188,9 @@ class DhakaFlix2 : AnimeHttpSource() {
                 if (isValidDirectoryItem(title, url)) {
                     animeList.add(SAnime.create().apply {
                         this.title = if (title.endsWith("/")) title.dropLast(1) else title
-                        this.url = url
-                        // Check for malformed host
-                        if (this.url.contains("172.16.50.9http")) {
-                            this.url = this.url.replace("172.16.50.9http", "172.16.50.9/")
-                        }
+                        this.url = fixUrl(url)
                         val finalUrl = if (url.endsWith("/")) url else "$url/"
-                        this.thumbnail_url = "${finalUrl}a_AL_.jpg".replace(" ", "%20")
+                        this.thumbnail_url = fixUrl("${finalUrl}a_AL_.jpg")
                     })
                 }
             }
@@ -195,20 +212,12 @@ class DhakaFlix2 : AnimeHttpSource() {
     override fun getFilterList() = Filters.getFilterList()
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        return GET(Filters.getUrl(query, filters), headers)
+        return GET(fixUrl(Filters.getUrl(query, filters)), headers)
     }
     override fun searchAnimeParse(response: Response) = popularAnimeParse(response)
 
-    private fun fixUrl(url: String): String {
-        var u = url.trim()
-        // Remove trailing http from host in IP-based URLs (e.g., 172.16.50.9http -> 172.16.50.9/)
-        u = u.replace(Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})http", RegexOption.IGNORE_CASE), "$1/")
-        // Remove double http:// sequences
-        u = u.replace(Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE), "http$1://")
-        // Fix cases like http://172.16.50.9//://...
-        u = u.replace("://://", "://")
-        u = u.replace(Regex("(?<!:)/{2,}"), "/")
-        return u
+    override fun animeDetailsRequest(anime: SAnime): Request {
+        return GET(fixUrl(anime.url), headers)
     }
 
     override fun animeDetailsParse(response: Response): SAnime {
@@ -223,9 +232,9 @@ class DhakaFlix2 : AnimeHttpSource() {
                 val img = document.select("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
                 var thumb = img.attr("abs:src")
                 if (thumb.isEmpty()) {
-                    thumb = document.select("""a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])""").attr("abs:href")
+                    thumb = document.select("a[href~=(?i)\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])").attr("abs:href")
                 }
-                thumbnail_url = fixUrl(thumb.replace(" ", "%20"))
+                thumbnail_url = fixUrl(thumb)
             }
         }
     }
@@ -243,7 +252,7 @@ class DhakaFlix2 : AnimeHttpSource() {
     private fun getMovieDetails(document: Document) = SAnime.create().apply {
         status = SAnime.COMPLETED
         thumbnail_url = fixUrl(document.select("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
-            .attr("abs:src").replace(" ", "%20"))
+            .attr("abs:src"))
         genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
         description = document.select("p.storyline").text().trim()
     }
@@ -251,7 +260,7 @@ class DhakaFlix2 : AnimeHttpSource() {
     private fun getSeriesDetails(document: Document) = SAnime.create().apply {
         status = SAnime.ONGOING
         thumbnail_url = fixUrl(document.select("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
-            .attr("abs:src").replace(" ", "%20"))
+            .attr("abs:src"))
         genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
         description = document.select("p.storyline").text().trim()
     }
@@ -295,7 +304,7 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     private fun getMovieMedia(document: Document): List<SEpisode> {
         val linkElement = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], a[href*=/s/lazyload/], .download-link a").lastOrNull()
-        val url = linkElement?.attr("abs:href")?.let { fixUrl(it.replace(" ", "%20")) } ?: ""
+        val url = linkElement?.attr("abs:href")?.let { fixUrl(it) } ?: ""
         val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
         
         return listOf(SEpisode.create().apply {
@@ -384,6 +393,6 @@ class DhakaFlix2 : AnimeHttpSource() {
     )
 
     companion object {
-        private val sizeRegex = Regex("""(\d+\.\d+ [GM]B|\d+ [GM]B).*""")
+        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*\")
     }
 }
