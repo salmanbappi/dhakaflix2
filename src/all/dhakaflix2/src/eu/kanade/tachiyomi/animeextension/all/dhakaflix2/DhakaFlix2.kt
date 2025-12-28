@@ -81,7 +81,7 @@ class DhakaFlix2 : AnimeHttpSource() {
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
-                var href = matcher.group(1).replace("\\", "/").replace(Regex("/+"), "/")
+                var href = matcher.group(1).replace("\\", "/").replace(Regex("(?<!:)/{2,}"), "/")
                 while (href.endsWith("/") && href.length > 1) {
                     href = href.substring(0, href.length - 1)
                 }
@@ -97,7 +97,13 @@ class DhakaFlix2 : AnimeHttpSource() {
                 val anime = SAnime.create().apply {
                     this.title = title
                     val finalUrl = if (href.endsWith("/")) href else "$href/"
-                    this.url = "$hostUrl$finalUrl"
+                    
+                    if (finalUrl.startsWith("http")) {
+                        this.url = finalUrl
+                    } else {
+                        val cleanHref = if (finalUrl.startsWith("/")) finalUrl else "/$finalUrl"
+                        this.url = "$hostUrl$cleanHref"
+                    }
                     
                     val thumbSuffix = if (serverName.contains("9")) "a11.jpg" else "a_AL_.jpg"
                     this.thumbnail_url = "${this.url}$thumbSuffix".replace(" ", "%20")
@@ -181,6 +187,9 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     override fun latestUpdatesRequest(page: Int) = popularAnimeRequest(page)
     override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
+
+    override fun getFilterList() = Filters.getFilterList()
+
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         return GET(Filters.getUrl(query, filters), headers)
     }
