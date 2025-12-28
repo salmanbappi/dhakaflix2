@@ -77,11 +77,11 @@ class DhakaFlix2 : AnimeHttpSource() {
             val bodyString = response.body?.string() ?: return
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
-                var href = matcher.group(1).replace("\\", "/").replace(Regex("/+"), "/")
+                var href = matcher.group(1).replace("\", "/").replace(Regex("/+"), "/")
                 while (href.endsWith("/") && href.length > 1) {
                     href = href.substring(0, href.length - 1)
                 }
@@ -256,9 +256,9 @@ class DhakaFlix2 : AnimeHttpSource() {
             val rawTitle = titleElement.ownText().trim()
             val name = rawTitle.split("&nbsp;").first().trim()
             val url = element.select("h5 a").attr("abs:href").trim()
-            val quality = element.select("h5 .badge-fill").text().let { 
+            val quality = element.select("h5 .badge-fill").text()?.let { 
                 sizeRegex.replace(it, "$1").trim()
-            }
+            } ?: ""
             val epName = element.select("h4").firstOrNull()?.ownText()?.trim() ?: ""
             val size = element.select("h4 .badge-outline").firstOrNull()?.text()?.trim() ?: ""
             
