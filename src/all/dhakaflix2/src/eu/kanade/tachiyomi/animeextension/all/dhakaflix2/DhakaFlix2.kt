@@ -56,10 +56,10 @@ class DhakaFlix2 : AnimeHttpSource() {
         }
         
         // Correct malformed hostname error (e.g. 172.16.50.9http -> 172.16.50.9/http)
-        u = u.replace(Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http", RegexOption.IGNORE_CASE), "$1/http")
+        u = u.replace(Regex("(\\d{1,3}\\.\\d{1,3}\\.\d{1,3}\\.\d{1,3})\\s*http", RegexOption.IGNORE_CASE), "$1/http")
         
         // Remove double protocol prefix
-        u = u.replace(Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE), "http$1://")
+        u = u.replace(Regex("http(s)?:\\/\\/http(s)?:\\/\\/", RegexOption.IGNORE_CASE), "http$1://")
         
         // Normalize slashes
         u = u.replace(":://://", ":://")
@@ -103,13 +103,16 @@ class DhakaFlix2 : AnimeHttpSource() {
             val bodyString = it.body?.string() ?: return
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
                 var href = matcher.group(1).replace("\\", "/").trim()
                 
-                val rawTitle = href.substringAfterLast("/")
+                // Fix: Remove trailing slash before extracting title
+                val cleanHrefForTitle = if (href.endsWith("/")) href.dropLast(1) else href
+                val rawTitle = cleanHrefForTitle.substringAfterLast("/")
+                
                 val title = try {
                     URLDecoder.decode(rawTitle, "UTF-8").trim()
                 } catch (e: Exception) {
@@ -131,7 +134,9 @@ class DhakaFlix2 : AnimeHttpSource() {
                     this.thumbnail_url = fixUrl("${this.url}/$thumbSuffix")
                 }
                 synchronized(results) {
-                    results.add(anime)
+                    if (results.none { it.url == anime.url }) {
+                        results.add(anime)
+                    }
                 }
             }
         }
@@ -394,6 +399,6 @@ class DhakaFlix2 : AnimeHttpSource() {
     )
 
     companion object {
-        private val sizeRegex = Regex("""(\d+\.\d+ [GM]B|\d+ [GM]B).*""")
+        private val sizeRegex = Regex("""(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*""")
     }
 }
