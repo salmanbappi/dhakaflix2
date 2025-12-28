@@ -1,8 +1,8 @@
 /**
  * Add or remove modules to load as needed for local development here.
  */
-loadIndividualExtension("all", "dhakaflix2")
-// loadAllIndividualExtensions()
+loadAllIndividualExtensions()
+// loadIndividualExtension("all", "jellyfin")
 
 /**
  * ===================================== COMMON CONFIGURATION ======================================
@@ -10,10 +10,10 @@ loadIndividualExtension("all", "dhakaflix2")
 include(":core")
 
 // Load all modules under /lib
-// File(rootDir, "lib").eachDir { include("lib:${it.name}") }
+File(rootDir, "lib").eachDir { include("lib:${it.name}") }
 
 // Load all modules under /lib-multisrc
-// File(rootDir, "lib-multisrc").eachDir { include("lib-multisrc:${it.name}") }
+File(rootDir, "lib-multisrc").eachDir { include("lib-multisrc:${it.name}") }
 
 /**
  * ======================================== HELPER FUNCTION ========================================

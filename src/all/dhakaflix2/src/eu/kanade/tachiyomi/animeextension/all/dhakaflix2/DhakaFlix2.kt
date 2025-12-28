@@ -78,7 +78,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                 val list = mutableListOf<SAnime>()
                 
                 while (matcher.find()) {
-                    var href = matcher.group(1).replace("\\\\", "/").replace(Regex("/+"), "/")
+                    var href = matcher.group(1).replace("\\", "/").replace(Regex("""/+"""), "/")
                     while (href.endsWith("/") && href.length > 1) {
                         href = href.substring(0, href.length - 1)
                     }
@@ -198,7 +198,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                 val img = document.select("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
                 var thumb = img.attr("abs:src")
                 if (thumb.isEmpty()) {
-                    thumb = document.select("a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])").attr("abs:href")
+                    thumb = document.select("""a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])""").attr("abs:href")
                 }
                 thumbnail_url = thumb
             }
@@ -362,6 +362,6 @@ class DhakaFlix2 : AnimeHttpSource() {
     )
 
     companion object {
-        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*")
+        private val sizeRegex = Regex("""(\d+\.\d+ [GM]B|\d+ [GM]B).*""")
     }
 }
