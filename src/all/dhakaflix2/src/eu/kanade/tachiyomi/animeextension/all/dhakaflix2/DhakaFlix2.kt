@@ -212,6 +212,17 @@ class DhakaFlix2 : AnimeHttpSource() {
     }
     override fun searchAnimeParse(response: Response) = popularAnimeParse(response)
 
+    private fun fixUrl(url: String): String {
+        var u = url
+        if (u.contains("172.16.50.9http")) {
+            u = u.replace("172.16.50.9http", "172.16.50.9/")
+        }
+        if (u.contains("http://http://")) {
+            u = u.replace("http://http://", "http://")
+        }
+        return u
+    }
+
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
         val mediaType = getMediaType(document)
@@ -226,7 +237,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                 if (thumb.isEmpty()) {
                     thumb = document.select("""a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])""").attr("abs:href")
                 }
-                thumbnail_url = thumb.replace(" ", "%20")
+                thumbnail_url = fixUrl(thumb.replace(" ", "%20"))
             }
         }
     }
@@ -242,16 +253,16 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     private fun getMovieDetails(document: Document) = SAnime.create().apply {
         status = SAnime.COMPLETED
-        thumbnail_url = document.select("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
-            .attr("abs:src").replace(" ", "%20")
+        thumbnail_url = fixUrl(document.select("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
+            .attr("abs:src").replace(" ", "%20"))
         genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
         description = document.select("p.storyline").text().trim()
     }
 
     private fun getSeriesDetails(document: Document) = SAnime.create().apply {
         status = SAnime.ONGOING
-        thumbnail_url = document.select("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
-            .attr("abs:src").replace(" ", "%20")
+        thumbnail_url = fixUrl(document.select("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
+            .attr("abs:src").replace(" ", "%20"))
         genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
         description = document.select("p.storyline").text().trim()
     }
@@ -281,7 +292,7 @@ class DhakaFlix2 : AnimeHttpSource() {
             val titleElement = element.select("h5").firstOrNull() ?: return@mapNotNull null
             val rawTitle = titleElement.ownText().trim()
             val name = rawTitle.split("&nbsp;").first().trim()
-            val url = element.select("h5 a").attr("abs:href").trim()
+            val url = fixUrl(element.select("h5 a").attr("abs:href").trim())
             val qualityText = element.select("h5 .badge-fill").text()
             val quality = qualityText?.let { sizeRegex.replace(it, "$1").trim() } ?: ""
             val epName = element.select("h4").firstOrNull()?.ownText()?.trim() ?: ""
@@ -295,7 +306,7 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     private fun getMovieMedia(document: Document): List<SEpisode> {
         val linkElement = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], a[href*=/s/lazyload/], .download-link a").lastOrNull()
-        val url = linkElement?.attr("abs:href")?.let { it.replace(" ", "%20") } ?: ""
+        val url = linkElement?.attr("abs:href")?.let { fixUrl(it.replace(" ", "%20")) } ?: ""
         val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
         
         return listOf(SEpisode.create().apply {
@@ -320,7 +331,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         visited.add(currentUrl)
 
         val links = document.select("a[href]")
-        val (files, dirs) = links.map { it to it.attr("abs:href") }
+        val (files, dirs) = links.map { it to fixUrl(it.attr("abs:href")) }
             .filter { (_, absHref) -> absHref.isNotEmpty() && absHref !in visited }
             .partition { (element, _) -> isVideoFile(element.attr("href")) }
 
