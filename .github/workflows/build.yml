@@ -23,21 +23,23 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Decode Keystore
-        env:
-          KEY_STORE: ${{ secrets.KEY_STORE }}
-        if: ${{ env.KEY_STORE != '' }}
-        run: echo $KEY_STORE | base64 -d > signingkey.jks
-
       - name: Build with Gradle
-        run: chmod +x gradlew && ./gradlew assembleRelease
+        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+
+      - name: Sign APK
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        with:
+          releaseDirectory: "**/*.apk"
+          signingKeyBase64: ${{ secrets.KEY_STORE }}
+          alias: ${{ secrets.ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
         env:
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          ALIAS: ${{ secrets.ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          BUILD_TOOLS_VERSION: "34.0.0"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: DhakaFlix2-APK
-          path: "**/*.apk"
+          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
