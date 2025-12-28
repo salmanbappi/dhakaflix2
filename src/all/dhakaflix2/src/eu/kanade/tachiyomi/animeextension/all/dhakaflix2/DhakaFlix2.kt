@@ -77,11 +77,11 @@ class DhakaFlix2 : AnimeHttpSource() {
             val bodyString = response.body?.string() ?: return
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
-                var href = matcher.group(1).replace("\", "/").replace(Regex("/+"), "/")
+                var href = matcher.group(1).replace("\\", "/").replace(Regex("/+"), "/")
                 while (href.endsWith("/") && href.length > 1) {
                     href = href.substring(0, href.length - 1)
                 }
@@ -314,14 +314,12 @@ class DhakaFlix2 : AnimeHttpSource() {
                     val href = element.attr("href")
                     href != "../" && !href.startsWith("?") && href.endsWith("/") && !href.contains("_h5ai")
                 }.forEach { (_, absHref) ->
-                    withContext(Dispatchers.IO) {
-                        semaphore.withPermit {
-                            try {
-                                val resp = client.newCall(GET(absHref, headers)).execute()
-                                val doc = resp.asJsoup()
-                                parseDirectoryRecursive(doc, depth - 1, episodes, visited)
-                            } catch (e: Exception) {}
-                        }
+                    semaphore.withPermit {
+                        try {
+                            val resp = client.newCall(GET(absHref, headers)).execute()
+                            val doc = resp.asJsoup()
+                            parseDirectoryRecursive(doc, depth - 1, episodes, visited)
+                        } catch (e: Exception) {}
                     }
                 }
             }
