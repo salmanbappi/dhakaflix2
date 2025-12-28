@@ -58,11 +58,13 @@ android {
     }
 
     signingConfigs {
-        release {
-            storeFile rootProject.file("signingkey.jks")
-            storePassword System.getenv("KEY_STORE_PASSWORD")
-            keyAlias System.getenv("ALIAS")
-            keyPassword System.getenv("KEY_PASSWORD")
+        if (rootProject.file("signingkey.jks").exists()) {
+            release {
+                storeFile rootProject.file("signingkey.jks")
+                storePassword System.getenv("KEY_STORE_PASSWORD")
+                keyAlias System.getenv("ALIAS")
+                keyPassword System.getenv("KEY_PASSWORD")
+            }
         }
     }
 
@@ -70,8 +72,6 @@ android {
         release {
             if (rootProject.file("signingkey.jks").exists()) {
                 signingConfig signingConfigs.release
-            } else {
-                signingConfig signingConfigs.debug
             }
             minifyEnabled false
         }
