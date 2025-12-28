@@ -74,8 +74,7 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         if (query.isNotEmpty()) {
-            return withContext(Dispatchers.IO) {
-                val results = mutableListOf<SAnime>()
+            return coroutineScope {
                 val servers = listOf(
                     "http://172.16.50.14" to "DHAKA-FLIX-14",
                     "http://172.16.50.12" to "DHAKA-FLIX-12",
@@ -83,13 +82,17 @@ class DhakaFlix2 : AnimeHttpSource() {
                     "http://172.16.50.7" to "DHAKA-FLIX-7"
                 )
 
-                for (server in servers) {
-                    try {
-                        searchOnServer(server.first, server.second, query, results)
-                    } catch (e: Exception) {
-                        // Ignore failure for individual server
+                val results = servers.map { server ->
+                    async(Dispatchers.IO) {
+                        val serverResults = mutableListOf<SAnime>()
+                        try {
+                            searchOnServer(server.first, server.second, query, serverResults)
+                        } catch (e: Exception) {
+                            // Ignore failure for individual server
+                        }
+                        serverResults
                     }
-                }
+                }.awaitAll().flatten().distinctBy { it.url }
 
                 AnimesPage(sortByTitle(results, query), false)
             }
@@ -334,10 +337,10 @@ class DhakaFlix2 : AnimeHttpSource() {
     private val semaphore = Semaphore(5)
 
     private suspend fun parseDirectoryParallel(document: Document): List<SEpisode> {
-        val episodes = mutableListOf<SEpisode>()
-        val visited = mutableSetOf<String>()
+        val episodes = java.util.Collections.synchronizedList(mutableListOf<SEpisode>())
+        val visited = java.util.Collections.synchronizedSet(mutableSetOf<String>())
         parseDirectoryRecursive(document, 3, episodes, visited)
-        return episodes
+        return episodes.toList()
     }
 
     private suspend fun parseDirectoryRecursive(document: Document, depth: Int, episodes: MutableList<SEpisode>, visited: MutableSet<String>) {
@@ -363,15 +366,17 @@ class DhakaFlix2 : AnimeHttpSource() {
                 dirs.filter { (element, _) -> 
                     val href = element.attr("href")
                     href != "../" && !href.startsWith("?") && href.endsWith("/") && !href.contains("_h5ai")
-                }.forEach { (_, absHref) ->
-                    semaphore.withPermit {
-                        try {
-                            val resp = client.newCall(GET(absHref, headers)).execute()
-                            val doc = resp.asJsoup()
-                            parseDirectoryRecursive(doc, depth - 1, episodes, visited)
-                        } catch (e: Exception) {}
+                }.map { (_, absHref) ->
+                    async(Dispatchers.IO) {
+                        semaphore.withPermit {
+                            try {
+                                val resp = client.newCall(GET(absHref, headers)).execute()
+                                val doc = resp.asJsoup()
+                                parseDirectoryRecursive(doc, depth - 1, episodes, visited)
+                            } catch (e: Exception) {}
+                        }
                     }
-                }
+                }.awaitAll()
             }
         }
     }
