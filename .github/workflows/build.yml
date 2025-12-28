@@ -30,7 +30,7 @@ jobs:
         uses: r0adkll/sign-android-release@v1
         id: sign_app
         with:
-          releaseDirectory: "**/*.apk"
+          releaseDirectory: src/all/dhakaflix2/build/outputs/apk/release
           signingKeyBase64: ${{ secrets.KEY_STORE }}
           alias: ${{ secrets.ALIAS }}
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
