@@ -90,7 +90,7 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         if (query.isNotEmpty()) {
-            return withTimeoutOrNull(20000) { // 20s timeout for global search
+            return withTimeoutOrNull(30000) {
                 coroutineScope {
                     val servers = listOf(
                         "http://172.16.50.14" to "DHAKA-FLIX-14",
@@ -99,15 +99,18 @@ class DhakaFlix2 : AnimeHttpSource() {
                         "http://172.16.50.7" to "DHAKA-FLIX-7"
                     )
 
-                    val results = servers.map { server ->
-                        async(Dispatchers.IO) {
-                            val serverResults = mutableListOf<SAnime>()
-                            try {
-                                searchOnServer(server.first, server.second, query, serverResults)
-                            } catch (e: Exception) {
-                                // Ignore failure for individual server
+                    // Search Probing: Try multiple variations to catch more results
+                    val queries = listOf(query, "$query movie").distinct()
+
+                    val results = servers.flatMap { server ->
+                        queries.map { q ->
+                            async(Dispatchers.IO) {
+                                val serverResults = mutableListOf<SAnime>()
+                                try {
+                                    searchOnServer(server.first, server.second, q, serverResults)
+                                } catch (e: Exception) {}
+                                serverResults
                             }
-                            serverResults
                         }
                     }.awaitAll().flatten().distinctBy { it.url }
 
@@ -356,11 +359,19 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     private val semaphore = Semaphore(50)
 
+    private val directoryCache = java.util.concurrent.ConcurrentHashMap<String, List<SEpisode>>()
+
     private suspend fun parseDirectoryParallel(document: Document): List<SEpisode> {
+        val currentUrl = document.location()
+        directoryCache[currentUrl]?.let { return it }
+
         val episodes = java.util.Collections.synchronizedList(mutableListOf<SEpisode>())
         val visited = java.util.Collections.synchronizedSet(mutableSetOf<String>())
         parseDirectoryRecursive(document, 3, episodes, visited)
-        return episodes.toList().sortedBy { it.name }.reversed()
+        
+        val result = episodes.toList().sortedBy { it.name }.reversed()
+        if (result.isNotEmpty()) directoryCache[currentUrl] = result
+        return result
     }
 
     private suspend fun parseDirectoryRecursive(document: Document, depth: Int, episodes: MutableList<SEpisode>, visited: MutableSet<String>) {
