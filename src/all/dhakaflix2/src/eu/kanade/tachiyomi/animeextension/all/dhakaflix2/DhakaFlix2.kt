@@ -31,6 +31,7 @@ import org.jsoup.nodes.Document
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
+import kotlin.concurrent.thread
 import kotlin.text.RegexOption
 
 class DhakaFlix2 : AnimeHttpSource() {
