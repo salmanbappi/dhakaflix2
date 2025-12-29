@@ -70,27 +70,32 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     private fun fixUrl(url: String): String {
         if (url.isBlank()) return url
-        var u = url.trim()
-        
-        // Handle baseUrl + absoluteUrl concatenation
-        val lastHttp = u.lastIndexOf("http://", ignoreCase = true)
-        val lastHttps = u.lastIndexOf("https://", ignoreCase = true)
-        val lastProtocol = if (lastHttp > lastHttps) lastHttp else lastHttps
-        
-        if (lastProtocol > 0) {
-            u = u.substring(lastProtocol)
-        }
-        
-        u = IP_HTTP_REGEX.replace(u, "$1/http")
-        u = DOUBLE_PROTOCOL_REGEX.replace(u, "http$1://")
-        u = u.replace(":://://", ":://")
-        u = MULTI_SLASH_REGEX.replace(u, "/")
-        
-        return u.replace(" ", "%20")
+        return runCatching {
+            var u = url.trim()
+            
+            // Handle baseUrl + absoluteUrl concatenation
+            val lastHttp = u.lastIndexOf("http://", ignoreCase = true)
+            val lastHttps = u.lastIndexOf("https://", ignoreCase = true)
+            val lastProtocol = maxOf(lastHttp, lastHttps)
+            
+            if (lastProtocol > 0) {
+                u = u.substring(lastProtocol)
+            }
+            
+            IP_HTTP_REGEX.replace(u, "$1/http")
+                .let { DOUBLE_PROTOCOL_REGEX.replace(it, "http$1://") }
+                .replace(":://://", ":://")
+                .let { MULTI_SLASH_REGEX.replace(it, "/") }
+                .replace(" ", "%20")
+        }.getOrDefault(url)
     }
+
+    private val searchCache = mutableMapOf<String, List<SAnime>>()
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         if (query.isNotEmpty()) {
+            searchCache[query]?.let { return AnimesPage(it, false) }
+            
             return withTimeoutOrNull(30000) {
                 coroutineScope {
                     val servers = listOf(
@@ -100,22 +105,22 @@ class DhakaFlix2 : AnimeHttpSource() {
                         "http://172.16.50.7" to "DHAKA-FLIX-7"
                     )
 
-                    // Search Probing: Try multiple variations to catch more results
                     val queries = listOf(query, "$query movie").distinct()
 
                     val results = servers.flatMap { server ->
                         queries.map { q ->
                             async(Dispatchers.IO) {
                                 val serverResults = mutableListOf<SAnime>()
-                                try {
+                                runCatching {
                                     searchOnServer(server.first, server.second, q, serverResults)
-                                } catch (e: Exception) {}
+                                }
                                 serverResults
                             }
                         }
-                    }.awaitAll().flatten().distinctBy { it.url }
+                    }.awaitAll().flatten().distinctBy { it.url }.let { sortByTitle(it, query) }
 
-                    AnimesPage(sortByTitle(results, query), false)
+                    if (results.isNotEmpty()) searchCache[query] = results
+                    AnimesPage(results, false)
                 }
             } ?: AnimesPage(emptyList(), false)
         }
@@ -123,50 +128,47 @@ class DhakaFlix2 : AnimeHttpSource() {
     }
 
     private fun searchOnServer(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>) {
-        val searchUrl = "$serverUrl/$serverName/"
+        val searchUrl = serverUrl.toHttpUrl().newBuilder().addPathSegment(serverName).addPathSegment("").build()
         val jsonPayload = "{\"action\":\"get\",\"search\":{\"href\":\"/$serverName/\",\"pattern\":\"$query\",\"ignorecase\":true}}"
         val body = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
         
-        val request = POST(searchUrl, headers, body)
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return
-            val bodyString = response.body?.string() ?: return
-            val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
-            
-            // Strict regex matching DhakaFlix Smali
-            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
-            val matcher = pattern.matcher(bodyString)
-            
-            while (matcher.find()) {
-                var href = matcher.group(1).replace('\\', '/').trim()
-                href = href.replace(Regex("/+"), "/")
+        val request = POST(searchUrl.toString(), headers, body)
+        runCatching {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return
+                val bodyString = response.body?.string() ?: return
+                val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
                 
-                var cleanHrefForTitle = href
-                while (cleanHrefForTitle.endsWith("/")) {
-                    cleanHrefForTitle = cleanHrefForTitle.dropLast(1)
-                }
+                val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+                val matcher = pattern.matcher(bodyString)
                 
-                val rawTitle = cleanHrefForTitle.substringAfterLast("/")
-                val title = try {
-                    URLDecoder.decode(rawTitle, "UTF-8").trim()
-                } catch (e: Exception) {
-                    rawTitle.trim()
-                }
-                
-                if (title.isEmpty() || isIgnored(title)) continue
-                
-                val anime = SAnime.create().apply {
-                    this.title = title
-                    val finalHref = if (href.endsWith("/")) href else "$href/"
-                    this.url = "$hostUrl$finalHref"
+                while (matcher.find()) {
+                    var href = matcher.group(1).replace('\\', '/').trim()
+                    href = href.replace(Regex("/+"), "/")
                     
-                    val thumbSuffix = if (serverName.contains("9")) "a11.jpg" else "a_AL_.jpg"
-                    this.thumbnail_url = (this.url + thumbSuffix).replace(" ", "%20")
-                }
-                
-                synchronized(results) {
-                    if (results.none { it.url == anime.url }) {
-                        results.add(anime)
+                    var cleanHrefForTitle = href
+                    while (cleanHrefForTitle.endsWith("/")) {
+                        cleanHrefForTitle = cleanHrefForTitle.dropLast(1)
+                    }
+                    
+                    val rawTitle = cleanHrefForTitle.substringAfterLast("/")
+                    val title = runCatching { URLDecoder.decode(rawTitle, "UTF-8").trim() }.getOrDefault(rawTitle.trim())
+                    
+                    if (title.isEmpty() || isIgnored(title)) continue
+                    
+                    val anime = SAnime.create().apply {
+                        this.title = title
+                        val finalHref = if (href.endsWith("/")) href else "$href/"
+                        this.url = "$hostUrl$finalHref"
+                        
+                        val thumbSuffix = if (serverName.contains("9")) "a11.jpg" else "a_AL_.jpg"
+                        this.thumbnail_url = (this.url + thumbSuffix).replace(" ", "%20")
+                    }
+                    
+                    synchronized(results) {
+                        if (results.none { it.url == anime.url }) {
+                            results.add(anime)
+                        }
                     }
                 }
             }
@@ -199,45 +201,50 @@ class DhakaFlix2 : AnimeHttpSource() {
     }
 
     override fun popularAnimeRequest(page: Int): Request {
-        return GET("http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/%282025%29/", headers)
+        val url = "http://172.16.50.14".toHttpUrl().newBuilder()
+            .addPathSegments("DHAKA-FLIX-14/Hindi Movies/(2025)/")
+            .build()
+        return GET(url.toString(), headers)
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
-        val document = response.asJsoup()
-        val animeList = mutableListOf<SAnime>()
+        return runCatching {
+            val document = response.asJsoup()
+            val animeList = mutableListOf<SAnime>()
 
-        val cards = document.select("div.card")
-        if (cards.isNotEmpty()) {
-            cards.forEach { card ->
-                val link = card.selectFirst("h5 a")
-                val title = link?.text() ?: ""
-                val url = link?.attr("abs:href") ?: ""
-                if (title.isNotEmpty() && url.isNotEmpty()) {
-                    animeList.add(SAnime.create().apply {
-                        this.title = title
-                        this.url = fixUrl(url)
-                        val img = card.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
-                        this.thumbnail_url = (img?.attr("abs:data-src")?.takeIf { it.isNotEmpty() } 
-                            ?: img?.attr("abs:data-lazy-src")?.takeIf { it.isNotEmpty() }
-                            ?: img?.attr("abs:src") ?: "").replace(" ", "%20")
-                    })
+            val cards = document.select("div.card")
+            if (cards.isNotEmpty()) {
+                cards.forEach { card ->
+                    val link = card.selectFirst("h5 a")
+                    val title = link?.text() ?: ""
+                    val url = link?.attr("abs:href") ?: ""
+                    if (title.isNotEmpty() && url.isNotEmpty()) {
+                        animeList.add(SAnime.create().apply {
+                            this.title = title
+                            this.url = fixUrl(url)
+                            val img = card.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
+                            this.thumbnail_url = (img?.attr("abs:data-src")?.takeIf { it.isNotEmpty() } 
+                                ?: img?.attr("abs:data-lazy-src")?.takeIf { it.isNotEmpty() }
+                                ?: img?.attr("abs:src") ?: "").replace(" ", "%20")
+                        })
+                    }
+                }
+            } else {
+                document.select("a").forEach { element ->
+                    val title = element.text()
+                    val url = element.attr("abs:href")
+                    if (isValidDirectoryItem(title, url)) {
+                        animeList.add(SAnime.create().apply {
+                            this.title = title.removeSuffix("/")
+                            this.url = fixUrl(url)
+                            val finalUrl = if (url.endsWith("/")) url else "$url/"
+                            this.thumbnail_url = (finalUrl + "a_AL_.jpg").replace(" ", "%20")
+                        })
+                    }
                 }
             }
-        } else {
-            document.select("a").forEach { element ->
-                val title = element.text()
-                val url = element.attr("abs:href")
-                if (isValidDirectoryItem(title, url)) {
-                    animeList.add(SAnime.create().apply {
-                        this.title = if (title.endsWith("/")) title.dropLast(1) else title
-                        this.url = fixUrl(url)
-                        val finalUrl = if (url.endsWith("/")) url else "$url/"
-                        this.thumbnail_url = (finalUrl + "a_AL_.jpg").replace(" ", "%20")
-                    })
-                }
-            }
-        }
-        return AnimesPage(animeList, false)
+            AnimesPage(animeList, false)
+        }.getOrElse { AnimesPage(emptyList(), false) }
     }
 
     private fun isValidDirectoryItem(title: String, url: String): Boolean {
