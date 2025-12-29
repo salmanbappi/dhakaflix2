@@ -249,7 +249,25 @@ class DhakaFlix2 : AnimeHttpSource() {
     override fun latestUpdatesRequest(page: Int) = popularAnimeRequest(page)
     override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
 
-    override fun getFilterList() = Filters.getFilterList()
+    private var dynamicCategories: Array<String> = emptyArray()
+
+    override fun getFilterList(): AnimeFilterList {
+        if (dynamicCategories.isEmpty()) {
+            fetchFilters()
+        }
+        return Filters.getFilterList(dynamicCategories)
+    }
+
+    private fun fetchFilters() {
+        thread {
+            try {
+                val response = client.newCall(GET("$baseUrl/", headers)).execute()
+                val doc = response.asJsoup()
+                val sidebar = doc.select("ul.nav-sidebar a, .sidebar-menu a")
+                dynamicCategories = sidebar.map { it.text().trim() }.filter { it.isNotEmpty() }.toTypedArray()
+            } catch (e: Exception) {}
+        }
+    }
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         return GET(fixUrl(Filters.getUrl(query, filters)), headers)
