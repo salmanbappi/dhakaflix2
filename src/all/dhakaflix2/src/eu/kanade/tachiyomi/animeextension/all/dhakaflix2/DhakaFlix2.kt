@@ -44,7 +44,7 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     override val supportsLatest = true
 
-    override val id: Long = 5181466391484419843L
+    override val id: Long = 5181466391484419841L
 
     override val client: OkHttpClient = super.client.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
