@@ -121,7 +121,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                         queries.map { q ->
                             async(Dispatchers.IO) {
                                 val serverResults = mutableListOf<SAnime>()
-                                val timeout = if (server.first.contains("172.16.50.7")) 10000L else 20000L
+                                val timeout = 8000L
                                 try {
                                     searchOnServerWithRetry(server.first, server.second, q, serverResults, timeout)
                                 } catch (e: Exception) {}
@@ -137,7 +137,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         return super.getSearchAnime(page, query, filters)
     }
 
-    private fun searchOnServerWithRetry(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, retries: Int = 2) {
+    private fun searchOnServerWithRetry(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, retries: Int = 1) {
         var lastException: Exception? = null
         for (i in 0 until retries) {
             try {
@@ -174,8 +174,8 @@ class DhakaFlix2 : AnimeHttpSource() {
 
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            // Stricter regex matching folders or large media files only (ignoring small samples/meta)
-            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":(null|[5-9]\\d{7,}|\\d{9,})", Pattern.CASE_INSENSITIVE)
+            // Simpler regex like Server 7 (catch all, filter later if needed)
+            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":(null|\\\\d+)", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
@@ -431,7 +431,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         return parseDirectory(document.location())
     }
 
-    private suspend fun parseDirectory(url: String, depth: Int = 5): List<SEpisode> {
+    private suspend fun parseDirectory(url: String, depth: Int = 3): List<SEpisode> {
         if (depth < 0) return emptyList()
 
         return try {
