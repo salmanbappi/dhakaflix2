@@ -51,8 +51,8 @@ class DhakaFlix2 : AnimeHttpSource() {
         .readTimeout(15, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val original = chain.request()
-            val url = original.url.toString()
-            val referer = if (url.contains("172.16.50.9")) "http://172.16.50.9/" else "$baseUrl/"
+            val requestUrl = original.url
+            val referer = "${requestUrl.scheme}://${requestUrl.host}/"
             
             val newRequest = original.newBuilder()
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -100,7 +100,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         u = u.replace(":://://", ":://")
         u = MULTI_SLASH_REGEX.replace(u, "/")
         
-        return u.replace(" ", "%20")
+        return u.replace(" ", "%20").replace("&", "%26")
     }
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
@@ -244,14 +244,14 @@ class DhakaFlix2 : AnimeHttpSource() {
             }
         } else {
             document.select("a").forEach { element ->
-                val title = element.text()
+                val title = element.text().trim()
                 val url = element.attr("abs:href")
-                if (isValidDirectoryItem(title, url)) {
+                if (title.isNotEmpty() && isValidDirectoryItem(title, url)) {
                     animeList.add(SAnime.create().apply {
                         this.title = if (title.endsWith("/")) title.dropLast(1) else title
                         this.url = fixUrl(url)
                         val finalUrl = if (url.endsWith("/")) url else "$url/"
-                        this.thumbnail_url = (finalUrl + "a_AL_.jpg").replace(" ", "%20")
+                        this.thumbnail_url = (finalUrl + "a_AL_.jpg").replace(" ", "%20").replace("&", "%26")
                     })
                 }
             }

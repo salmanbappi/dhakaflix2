@@ -22,12 +22,10 @@ object Filters {
         val categoryFilter = filters[1] as DhakaFlixSelect
         val yearFilter = filters[2] as DhakaFlixSelect
         val alphabetFilter = filters[3] as DhakaFlixSelect
-        val languageFilter = filters[4] as DhakaFlixSelect
 
         val category = categoryFilter.values[categoryFilter.state]
         val year = yearFilter.values[yearFilter.state]
         val alphabet = alphabetFilter.values[alphabetFilter.state]
-        val language = languageFilter.values[languageFilter.state]
 
         var baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
         var path = "Hindi Movies"
@@ -67,14 +65,14 @@ object Filters {
             }
             "TV Series" -> {
                 baseUrl = "http://172.16.50.12/DHAKA-FLIX-12"
+                // Default to A-L if "Any" is selected to show content
                 val subPath = when (alphabet) {
-                    "0-9" -> "TV Series ★  0  —  9"
-                    "A-F / A-L" -> "TV Series ♥  A  —  L"
-                    "G-M / M-R" -> "TV Series ♦  M  —  R"
-                    "N-S / S-Z" -> "TV Series ♦  S  —  Z"
-                    else -> ""
+                    "0-9" -> "TV Series \u2605  0  \u2014  9"
+                    "G-M / M-R" -> "TV Series \u2666  M  \u2014  R"
+                    "N-S / S-Z" -> "TV Series \u2666  S  \u2014  Z"
+                    else -> "TV Series \u2665  A  \u2014  L" // Default/A-L
                 }
-                path = "TV-WEB-Series" + (if (subPath.isNotEmpty()) "/$subPath" else "")
+                path = "TV-WEB-Series/$subPath"
             }
             "Korean TV & Web Series" -> {
                 baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
@@ -82,15 +80,15 @@ object Filters {
             }
             "Anime-TV Series" -> {
                 baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
+                // Default to A-F if "Any" is selected
                 val subPath = when (alphabet) {
-                    "0-9" -> "Anime-TV Series ★  0  —  9"
-                    "A-F / A-L" -> "Anime-TV Series ♥  A  —  F"
-                    "G-M / M-R" -> "Anime-TV Series ♥  G  —  M"
-                    "N-S / S-Z" -> "Anime-TV Series ♦  N  —  S"
-                    "T-Z" -> "Anime-TV Series ♦  T  —  Z"
-                    else -> ""
+                    "0-9" -> "Anime-TV Series \u2605  0  \u2014  9"
+                    "G-M / M-R" -> "Anime-TV Series \u2665  G  \u2014  M"
+                    "N-S / S-Z" -> "Anime-TV Series \u2666  N  \u2014  S"
+                    "T-Z" -> "Anime-TV Series \u2666  T  \u2014  Z"
+                    else -> "Anime-TV Series \u2665  A  \u2014  F" // Default/A-F
                 }
-                path = "Anime & Cartoon TV Series" + (if (subPath.isNotEmpty()) "/$subPath" else "")
+                path = "Anime & Cartoon TV Series/$subPath"
             }
             "Documentary" -> {
                 baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
@@ -117,7 +115,6 @@ object Filters {
                 path = "Hindi Movies/(2025)"
             }
             else -> {
-                // Handle dynamic categories if they arrived
                 baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
                 path = category
             }
