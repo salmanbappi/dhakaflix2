@@ -123,9 +123,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                                 val serverResults = mutableListOf<SAnime>()
                                 val timeout = if (server.first.contains("172.16.50.7")) 6000L else 15000L
                                 try {
-                                    withTimeoutOrNull(timeout) {
-                                        searchOnServer(server.first, server.second, q, serverResults)
-                                    }
+                                    searchOnServer(server.first, server.second, q, serverResults, timeout)
                                 } catch (e: Exception) {}
                                 serverResults
                             }
@@ -139,13 +137,17 @@ class DhakaFlix2 : AnimeHttpSource() {
         return super.getSearchAnime(page, query, filters)
     }
 
-    private fun searchOnServer(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>) {
+    private fun searchOnServer(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long) {
+        val searchClient = client.newBuilder()
+            .readTimeout(timeout, TimeUnit.MILLISECONDS)
+            .build()
+
         val searchUrl = "$serverUrl/$serverName/"
         val jsonPayload = "{\"action\":\"get\",\"search\":{\"href\":\"/$serverName/\",\"pattern\":\"$query\",\"ignorecase\":true}}"
         val body = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
         
         val request = POST(searchUrl, headers, body)
-        client.newCall(request).execute().use { response ->
+        searchClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return
             val bodyString = response.body?.string() ?: return
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
