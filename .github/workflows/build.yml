@@ -82,12 +82,6 @@ jobs:
         with:
           tag_name: v${{ github.run_number }}-gemini
           name: DhakaFlix 2 Gemini Optimized v${{ github.run_number }}
-          body: |
-            ### 🤖 Automated Gemini Build
-            - **Robust Search:** Parallel probing across multiple servers.
-            - **Stability:** Fixed parsing regressions and URL normalization.
-            - **Security:** Signed with Permanent Key.
-            - **Status:** Build Successful & Clean
           files: ${{ steps.sign_app.outputs.signedReleaseFile }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -98,12 +92,11 @@ jobs:
           MY_GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           if [ -z "$MY_GH_PAT" ]; then
-            echo "❌ ERROR: GH_PAT secret is EMPTY. Please check your repository secrets."
+            echo "❌ ERROR: GH_PAT secret is EMPTY."
             exit 1
           fi
           
-          # Use x-access-token which is more stable for PATs in CI
-          git clone https://x-access-token:${MY_GH_PAT}@github.com/salmanbappi/extensions-repo.git repo_tmp
+          git clone https://salmanbappi:${MY_GH_PAT}@github.com/salmanbappi/extensions-repo.git repo_tmp
           
           PKG_NAME="eu.kanade.tachiyomi.animeextension.all.dhakaflix2"
           VERSION_CODE=$(grep "extVersionCode =" src/all/dhakaflix2/build.gradle | awk '{print $3}')
@@ -114,15 +107,13 @@ jobs:
           cp src/all/dhakaflix2/build/outputs/apk/release/aniyomi-all.dhakaflix2-v$VERSION_NAME-release-unsigned-signed.apk repo_tmp/apk/$TARGET_NAME
           
           cd repo_tmp
-          git config user.name "Gemini Automation"
-          git config user.email "gemini@automation.bot"
+          git config user.name "salmanbappi"
+          git config user.email "salmanbappi@users.noreply.github.com"
           git add apk/$TARGET_NAME
           
           python generate_repo.py
           git add index.min.json repo.json
           
           git commit -m "Update DhakaFlix 2 to v$VERSION_NAME"
-          # Force remote URL to include token for push
-          git remote set-url origin https://x-access-token:${MY_GH_PAT}@github.com/salmanbappi/extensions-repo.git
+          git remote set-url origin https://salmanbappi:${MY_GH_PAT}@github.com/salmanbappi/extensions-repo.git
           git push origin main
-

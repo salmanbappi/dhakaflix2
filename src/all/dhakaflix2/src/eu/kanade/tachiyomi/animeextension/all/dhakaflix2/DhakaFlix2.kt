@@ -128,7 +128,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                                 serverResults
                             }
                         }
-                    }.awaitAll().flatten().distinctBy { it.url }.take(100)
+                    }.awaitAll().flatten().distinctBy { it.url }.take(50)
 
                     AnimesPage(sortByTitle(results, query), false)
                 }
@@ -137,7 +137,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         return super.getSearchAnime(page, query, filters)
     }
 
-    private fun searchOnServerWithRetry(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, retries: Int = 3) {
+    private fun searchOnServerWithRetry(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, retries: Int = 2) {
         var lastException: Exception? = null
         for (i in 0 until retries) {
             try {
@@ -146,7 +146,7 @@ class DhakaFlix2 : AnimeHttpSource() {
             } catch (e: Exception) {
                 lastException = e
                 if (i < retries - 1) {
-                    Thread.sleep(1500) // Longer wait before retry
+                    Thread.sleep(500)
                 }
             }
         }
@@ -220,7 +220,15 @@ class DhakaFlix2 : AnimeHttpSource() {
     }
 
     private fun sortByTitle(list: List<SAnime>, query: String): List<SAnime> {
-        return list.sortedByDescending { diceCoefficient(it.title, query) }
+        val lowerQuery = query.lowercase()
+        return list.sortedWith(compareByDescending<SAnime> {
+            val lowerTitle = it.title.lowercase()
+            when {
+                lowerTitle == lowerQuery -> 100.0
+                lowerTitle.startsWith(lowerQuery) -> 90.0 + diceCoefficient(it.title, query)
+                else -> diceCoefficient(it.title, query)
+            }
+        }.thenBy { it.title.length })
     }
 
     private fun diceCoefficient(s1: String, s2: String): Double {

@@ -65,7 +65,6 @@ object Filters {
             }
             "TV Series" -> {
                 baseUrl = "http://172.16.50.12/DHAKA-FLIX-12"
-                // Unicode exactness: ★ \u2605, ♥ \u2665, ♦ \u2666, — \u2014
                 val subPath = when (alphabet) {
                     "0-9" -> "TV Series \u2605  0  \u2014  9"
                     "G-M / M-R" -> "TV Series \u2666  M  \u2014  R"
@@ -120,19 +119,21 @@ object Filters {
         }
 
         // Append year if applicable
-        val supportsYear = when (category) {
-            "Hindi Movies", "English Movies (1080p)", "Animation Movies", "IMDb Top-250 Movies" -> true
-            "English Movies", "Kolkata Bangla Movies", "Foreign Language Movies", "3D Movies" -> {
-                // Server 7 categories - don't allow 2026 if not exist
-                year != "Any" && year != "2026"
+        if (year != "Any") {
+            val yearPath = when {
+                category == "English Movies (1080p)" -> "($year) 1080p"
+                category == "South Indian Movies" || category == "South Hindi Dubbed" -> {
+                    if (year == "(2009) & Before") "2000 & Before" else year
+                }
+                category == "English Movies" && year == "(2009) & Before" -> "(1960-1994)"
+                else -> "($year)"
             }
-            "South Indian Movies", "South Hindi Dubbed" -> true
-            else -> false
-        }
-
-        if (year != "Any" && supportsYear) {
-            val yearPath = if (year == "(2009) & Before") "(2009) & Before" else "($year)"
-            path += "/$yearPath"
+            
+            // Server 7 check for 2026 (not supported yet)
+            val isServer7 = baseUrl.contains("50.7")
+            if (!(isServer7 && year == "2026")) {
+                path += "/$yearPath"
+            }
         }
 
         return "$baseUrl/$path/"
