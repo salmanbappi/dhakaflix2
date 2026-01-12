@@ -47,26 +47,40 @@ class DhakaFlix2 : AnimeHttpSource() {
     override val id: Long = 5181466391484419841L
 
     override val client: OkHttpClient = super.client.newBuilder()
-        .connectTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val original = chain.request()
+            val url = original.url.toString()
+            val referer = if (url.contains("172.16.50.9")) "http://172.16.50.9/" else "$baseUrl/"
+            
+            val newRequest = original.newBuilder()
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .header("Accept", "*/*")
+                .header("Referer", referer)
+                .build()
+            
+            chain.proceed(newRequest)
+        }
+        .cookieJar(object : okhttp3.CookieJar {
+            private val cookieStore = mutableMapOf<String, List<okhttp3.Cookie>>()
+            override fun saveFromResponse(url: HttpUrl, cookies: List<okhttp3.Cookie>) {
+                cookieStore[url.host] = cookies
+            }
+            override fun loadForRequest(url: HttpUrl): List<okhttp3.Cookie> {
+                return cookieStore[url.host] ?: emptyList()
+            }
+        })
         .dispatcher(okhttp3.Dispatcher().apply {
             maxRequests = 100
             maxRequestsPerHost = 100
         })
         .build()
 
-    private val cm by lazy { CookieManager(client) }
+    override fun headersBuilder() = super.headersBuilder()
+        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    private val globalHeaders by lazy {
-        super.headersBuilder()
-            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .add("Accept", "*/*")
-            .add("Cookie", cm.getCookiesHeaders())
-            .add("Referer", "$baseUrl/")
-            .build()
-    }
 
-    override fun headersBuilder() = globalHeaders.newBuilder()
 
     private fun fixUrl(url: String): String {
         if (url.isBlank()) return url
@@ -91,7 +105,7 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         if (query.isNotEmpty()) {
-            return withTimeoutOrNull(30000) {
+            return withTimeoutOrNull(10000) {
                 coroutineScope {
                     val servers = listOf(
                         "http://172.16.50.14" to "DHAKA-FLIX-14",
@@ -378,58 +392,66 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     private val semaphore = Semaphore(50)
 
-    private val directoryCache = java.util.concurrent.ConcurrentHashMap<String, List<SEpisode>>()
-
     private suspend fun parseDirectoryParallel(document: Document): List<SEpisode> {
-        val currentUrl = document.location()
-        directoryCache[currentUrl]?.let { return it }
-
-        val episodes = java.util.Collections.synchronizedList(mutableListOf<SEpisode>())
-        val visited = java.util.Collections.synchronizedSet(mutableSetOf<String>())
-        parseDirectoryRecursive(document, 3, episodes, visited)
-        
-        val result = episodes.toList().sortedBy { it.name }.reversed()
-        if (result.isNotEmpty()) directoryCache[currentUrl] = result
-        return result
+        return parseDirectory(document.location())
     }
 
-    private suspend fun parseDirectoryRecursive(document: Document, depth: Int, episodes: MutableList<SEpisode>, visited: MutableSet<String>) {
-        val currentUrl = document.location()
-        if (!visited.add(currentUrl)) return
+    private suspend fun parseDirectory(url: String, depth: Int = 3): List<SEpisode> {
+        if (depth < 0) return emptyList()
 
-        val links = document.select("a[href]")
-        val (files, dirs) = links.map { it to it.attr("abs:href") }
-            .filter { (_, absHref) -> absHref.isNotEmpty() && absHref !in visited }
-            .partition { (element, _) -> isVideoFile(element.attr("href")) }
+        return try {
+            val response = client.newCall(GET(url, headers)).execute()
+            val body = response.body?.string() ?: return emptyList()
+            val baseUrl = response.request.url.toString().let { if (it.endsWith("/")) it else "$it/" }
 
-        files.forEach { (element, absHref) ->
-            episodes.add(SEpisode.create().apply {
-                this.url = absHref
-                this.name = element.text().trim()
-                this.episode_number = -1f
-            })
-            visited.add(absHref)
-        }
+            val fileEpisodes = mutableListOf<SEpisode>()
+            val subDirs = mutableListOf<String>()
 
-        if (depth > 0 && files.isEmpty()) {
+            // Regex for fast link extraction: <a href="...">
+            // Matches: <a [^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>
+            val matcher = LINK_REGEX.matcher(body)
+
+            while (matcher.find()) {
+                val href = matcher.group(1) ?: continue
+                val text = matcher.group(2)?.trim() ?: ""
+
+                if (href.contains("..") || href.startsWith("?") || href.contains("_h5ai") || 
+                    href.contains("?C=") || href.contains("?O=") || isIgnored(text)) continue
+
+                val absUrl = if (href.startsWith("http")) href else baseUrl + href
+
+                if (isVideoFile(href)) {
+                    fileEpisodes.add(SEpisode.create().apply {
+                        this.url = absUrl
+                        this.name = try { URLDecoder.decode(text, "UTF-8") } catch(e:Exception) { text }
+                        this.episode_number = -1f
+                    })
+                } else if (href.endsWith("/")) {
+                     subDirs.add(absUrl)
+                }
+            }
+
+            // Early Exit: If videos found, don't recurse deeper
+            if (fileEpisodes.isNotEmpty()) {
+                return fileEpisodes.sortedBy { it.name }.reversed()
+            }
+
+
+            // Recurse into subdirectories
             coroutineScope {
-                dirs.filter { (element, _) -> 
-                    val href = element.attr("href")
-                    href != "../" && !href.startsWith("?") && href.endsWith("/") && !href.contains("_h5ai")
-                }.map { (_, absHref) ->
+                subDirs.map { dir ->
                     async(Dispatchers.IO) {
                         semaphore.withPermit {
-                            try {
-                                val resp = client.newCall(GET(absHref, headers)).execute()
-                                val doc = resp.asJsoup()
-                                parseDirectoryRecursive(doc, depth - 1, episodes, visited)
-                            } catch (e: Exception) {}
+                            parseDirectory(dir, depth - 1)
                         }
                     }
-                }.awaitAll()
+                }.awaitAll().flatten()
             }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
+
 
     private fun isVideoFile(href: String): Boolean {
         val h = href.lowercase()
@@ -463,36 +485,8 @@ class DhakaFlix2 : AnimeHttpSource() {
         val size: String
     )
 
-    class CookieManager(private val client: OkHttpClient) {
-        private val cookieUrl = "http://172.16.50.9/".toHttpUrl()
-        @Volatile
-        private var cookies: List<Cookie>? = null
-        private val lock = Any()
-
-        fun getCookiesHeaders(): String {
-            val c = cookies ?: synchronized(lock) {
-                cookies ?: fetchCookies().also { cookies = it }
-            }
-            return c.joinToString("; ") { "${it.name}=${it.value}" }
-        }
-
-        private fun fetchCookies(): List<Cookie> {
-            val req = Request.Builder()
-                .url(cookieUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .build()
-            return try {
-                val res = client.newBuilder().followRedirects(false).build().newCall(req).execute()
-                val cookieList = Cookie.parseAll(cookieUrl, res.headers)
-                res.close()
-                cookieList
-            } catch (e: Exception) {
-                emptyList()
-            }
-        }
-    }
-
     companion object {
+        private val LINK_REGEX = Pattern.compile("<a [^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", Pattern.CASE_INSENSITIVE)
         private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*")
         private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http", RegexOption.IGNORE_CASE)
         private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE)
