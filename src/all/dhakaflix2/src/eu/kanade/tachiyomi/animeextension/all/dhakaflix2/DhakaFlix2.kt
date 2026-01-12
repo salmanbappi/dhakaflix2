@@ -121,8 +121,11 @@ class DhakaFlix2 : AnimeHttpSource() {
                         queries.map { q ->
                             async(Dispatchers.IO) {
                                 val serverResults = mutableListOf<SAnime>()
+                                val timeout = if (server.first.contains("172.16.50.7")) 6000L else 15000L
                                 try {
-                                    searchOnServer(server.first, server.second, q, serverResults)
+                                    withTimeoutOrNull(timeout) {
+                                        searchOnServer(server.first, server.second, q, serverResults)
+                                    }
                                 } catch (e: Exception) {}
                                 serverResults
                             }
