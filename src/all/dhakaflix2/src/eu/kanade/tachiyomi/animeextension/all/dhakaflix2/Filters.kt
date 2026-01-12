@@ -17,21 +17,118 @@ object Filters {
 
     fun getUrl(query: String, filters: AnimeFilterList?): String {
         if (query.isNotEmpty()) return query
-        if (filters == null) return "http://172.16.50.14/DHAKA-FLIX-14/Hindi Movies/(2025)/"
+        if (filters == null) return "http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/%282025%29/"
 
         val categoryFilter = filters[1] as DhakaFlixSelect
-        val categoryName = categoryFilter.values[categoryFilter.state]
-        val yearIndex = (filters[2] as DhakaFlixSelect).state
-        
-        // If we are using dynamic categories, we try to build the URL based on the name
-        // Otherwise fallback to the hardcoded switch
-        return if (categoryFilter.values.size > 20) { // Likely dynamic
-             "http://172.16.50.14/DHAKA-FLIX-14/$categoryName/"
-        } else {
-            // Original switch logic...
-            val categoryIndex = categoryFilter.state
-            // ... (rest of the original getUrl logic)
-            "http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/" // placeholder for brevity
+        val yearFilter = filters[2] as DhakaFlixSelect
+        val alphabetFilter = filters[3] as DhakaFlixSelect
+        val languageFilter = filters[4] as DhakaFlixSelect
+
+        val category = categoryFilter.values[categoryFilter.state]
+        val year = yearFilter.values[yearFilter.state]
+        val alphabet = alphabetFilter.values[alphabetFilter.state]
+        val language = languageFilter.values[languageFilter.state]
+
+        var baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
+        var path = "Hindi Movies"
+
+        when (category) {
+            "Hindi Movies" -> {
+                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
+                path = "Hindi Movies"
+            }
+            "English Movies" -> {
+                baseUrl = "http://172.16.50.7/DHAKA-FLIX-7"
+                path = "English Movies"
+            }
+            "English Movies (1080p)" -> {
+                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
+                path = "English Movies (1080p)"
+            }
+            "South Indian Movies" -> {
+                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
+                path = "SOUTH INDIAN MOVIES/South Movies"
+            }
+            "South Hindi Dubbed" -> {
+                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
+                path = "SOUTH INDIAN MOVIES/Hindi Dubbed"
+            }
+            "Kolkata Bangla Movies" -> {
+                baseUrl = "http://172.16.50.7/DHAKA-FLIX-7"
+                path = "Kolkata Bangla Movies"
+            }
+            "Animation Movies" -> {
+                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
+                path = "Animation Movies"
+            }
+            "Foreign Language Movies" -> {
+                baseUrl = "http://172.16.50.7/DHAKA-FLIX-7"
+                path = "Foreign Language Movies"
+            }
+            "TV Series" -> {
+                baseUrl = "http://172.16.50.12/DHAKA-FLIX-12"
+                val subPath = when (alphabet) {
+                    "0-9" -> "TV Series ★  0  —  9"
+                    "A-F / A-L" -> "TV Series ♥  A  —  L"
+                    "G-M / M-R" -> "TV Series ♦  M  —  R"
+                    "N-S / S-Z" -> "TV Series ♦  S  —  Z"
+                    else -> ""
+                }
+                path = "TV-WEB-Series" + (if (subPath.isNotEmpty()) "/$subPath" else "")
+            }
+            "Korean TV & Web Series" -> {
+                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
+                path = "KOREAN TV & WEB Series"
+            }
+            "Anime-TV Series" -> {
+                baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
+                val subPath = when (alphabet) {
+                    "0-9" -> "Anime-TV Series ★  0  —  9"
+                    "A-F / A-L" -> "Anime-TV Series ♥  A  —  F"
+                    "G-M / M-R" -> "Anime-TV Series ♥  G  —  M"
+                    "N-S / S-Z" -> "Anime-TV Series ♦  N  —  S"
+                    "T-Z" -> "Anime-TV Series ♦  T  —  Z"
+                    else -> ""
+                }
+                path = "Anime & Cartoon TV Series" + (if (subPath.isNotEmpty()) "/$subPath" else "")
+            }
+            "Documentary" -> {
+                baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
+                path = "Documentary"
+            }
+            "WWE & AEW Wrestling" -> {
+                baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
+                path = "WWE & AEW Wrestling"
+            }
+            "Awards & TV Shows" -> {
+                baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
+                path = "Awards & TV Shows"
+            }
+            "IMDb Top-250 Movies" -> {
+                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
+                path = "IMDb Top-250 Movies"
+            }
+            "3D Movies" -> {
+                baseUrl = "http://172.16.50.7/DHAKA-FLIX-7"
+                path = "3D Movies"
+            }
+            "Trending Movies" -> {
+                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
+                path = "Hindi Movies/(2025)"
+            }
+            else -> {
+                // Handle dynamic categories if they arrived
+                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
+                path = category
+            }
         }
+
+        // Append year if applicable (for Movies)
+        if (year != "Any" && !category.contains("TV") && !category.contains("Anime") && !category.contains("Documentary")) {
+            val yearPath = if (year == "(2009) & Before") "(2009) & Before" else "($year)"
+            path += "/$yearPath"
+        }
+
+        return "$baseUrl/$path/"
     }
 }
