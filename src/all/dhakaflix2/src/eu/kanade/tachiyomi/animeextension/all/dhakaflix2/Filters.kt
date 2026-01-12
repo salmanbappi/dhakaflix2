@@ -120,8 +120,18 @@ object Filters {
             }
         }
 
-        // Append year if applicable (for Movies)
-        if (year != "Any" && !category.contains("TV") && !category.contains("Anime") && !category.contains("Documentary")) {
+        // Append year if applicable
+        val supportsYear = when (category) {
+            "Hindi Movies", "English Movies (1080p)", "Animation Movies", "IMDb Top-250 Movies" -> true
+            "English Movies", "Kolkata Bangla Movies", "Foreign Language Movies", "3D Movies" -> {
+                // Server 7 categories - don't allow 2026 yet
+                year != "Any" && year != "2026"
+            }
+            "South Indian Movies", "South Hindi Dubbed" -> true
+            else -> false
+        }
+
+        if (year != "Any" && supportsYear) {
             val yearPath = if (year == "(2009) & Before") "(2009) & Before" else "($year)"
             path += "/$yearPath"
         }
