@@ -164,6 +164,12 @@ class DhakaFlix2 : AnimeHttpSource() {
         searchClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return
             val bodyString = response.body?.string() ?: return
+            
+            if (serverUrl.contains("172.16.50.7")) {
+                Server7Parser.parseServer7Response(bodyString, serverUrl, serverName, results)
+                return
+            }
+
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
             // Refined regex matching both directories and potentially direct files

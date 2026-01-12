@@ -112,7 +112,7 @@ object Filters {
             }
             "Trending Movies" -> {
                 baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
-                path = "Hindi Movies/(2025)"
+                path = "Hindi Movies/(2026)"
             }
             else -> {
                 baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"

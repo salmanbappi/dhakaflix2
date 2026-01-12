@@ -97,7 +97,7 @@ jobs:
         run: |
           # This requires a secret named 'GH_PAT' with repo scope
           if [ -n "${{ secrets.GH_PAT }}" ]; then
-            git clone https://${{ secrets.GH_PAT }}@github.com/salmanbappi/extensions-repo.git repo_tmp
+            git clone https://x-access-token:${{ secrets.GH_PAT }}@github.com/salmanbappi/extensions-repo.git repo_tmp
             
             PKG_NAME="eu.kanade.tachiyomi.animeextension.all.dhakaflix2"
             VERSION_CODE=$(grep "extVersionCode =" src/all/dhakaflix2/build.gradle | awk '{print $3}')
@@ -105,7 +105,7 @@ jobs:
             TARGET_NAME="$PKG_NAME-v$VERSION_NAME-c$VERSION_CODE.apk"
             
             mkdir -p repo_tmp/apk
-            cp ${{ steps.sign_app.outputs.signedReleaseFile }} repo_tmp/apk/$TARGET_NAME
+            cp src/all/dhakaflix2/build/outputs/apk/release/aniyomi-all.dhakaflix2-v$VERSION_NAME-release-unsigned-signed.apk repo_tmp/apk/$TARGET_NAME
             
             cd repo_tmp
             git config user.name "Gemini Automation"
