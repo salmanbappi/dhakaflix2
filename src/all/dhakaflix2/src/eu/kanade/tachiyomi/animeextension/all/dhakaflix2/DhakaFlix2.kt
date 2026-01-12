@@ -47,8 +47,8 @@ class DhakaFlix2 : AnimeHttpSource() {
     override val id: Long = 5181466391484419841L
 
     override val client: OkHttpClient = super.client.newBuilder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val original = chain.request()
             val requestUrl = original.url
@@ -72,7 +72,7 @@ class DhakaFlix2 : AnimeHttpSource() {
             }
         })
         .dispatcher(okhttp3.Dispatcher().apply {
-            maxRequests = 20
+            maxRequests = 40
             maxRequestsPerHost = 20
         })
         .build()
@@ -105,7 +105,7 @@ class DhakaFlix2 : AnimeHttpSource() {
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         if (query.isNotEmpty()) {
-            return withTimeoutOrNull(10000) {
+            return withTimeoutOrNull(30000) {
                 coroutineScope {
                     val servers = listOf(
                         "http://172.16.50.14" to "DHAKA-FLIX-14",
@@ -121,9 +121,9 @@ class DhakaFlix2 : AnimeHttpSource() {
                         queries.map { q ->
                             async(Dispatchers.IO) {
                                 val serverResults = mutableListOf<SAnime>()
-                                val timeout = if (server.first.contains("172.16.50.7")) 6000L else 15000L
+                                val timeout = if (server.first.contains("172.16.50.7")) 10000L else 20000L
                                 try {
-                                    searchOnServer(server.first, server.second, q, serverResults, timeout)
+                                    searchOnServerWithRetry(server.first, server.second, q, serverResults, timeout)
                                 } catch (e: Exception) {}
                                 serverResults
                             }
@@ -135,6 +135,20 @@ class DhakaFlix2 : AnimeHttpSource() {
             } ?: AnimesPage(emptyList(), false)
         }
         return super.getSearchAnime(page, query, filters)
+    }
+
+    private fun searchOnServerWithRetry(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, retries: Int = 2) {
+        var lastException: Exception? = null
+        for (i in 0 until retries) {
+            try {
+                searchOnServer(serverUrl, serverName, query, results, timeout)
+                return
+            } catch (e: Exception) {
+                lastException = e
+                Thread.sleep(500) // Brief wait before retry
+            }
+        }
+        lastException?.let { throw it }
     }
 
     private fun searchOnServer(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long) {
@@ -152,8 +166,8 @@ class DhakaFlix2 : AnimeHttpSource() {
             val bodyString = response.body?.string() ?: return
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            // Strict regex matching DhakaFlix Smali
-            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":null", Pattern.CASE_INSENSITIVE)
+            // Refined regex matching both directories and potentially direct files
+            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":(null|\\d+)", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
@@ -180,7 +194,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                     this.url = "$hostUrl$finalHref"
                     
                     val thumbSuffix = if (serverName.contains("9")) "a11.jpg" else "a_AL_.jpg"
-                    this.thumbnail_url = (this.url + thumbSuffix).replace(" ", "%20")
+                    this.thumbnail_url = (this.url + thumbSuffix).replace(" ", "%20").replace("&", "%26")
                 }
                 
                 synchronized(results) {
