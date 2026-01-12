@@ -401,29 +401,28 @@ class DhakaFlix2 : AnimeHttpSource() {
         return parseDirectory(document.location())
     }
 
-    private suspend fun parseDirectory(url: String, depth: Int = 3): List<SEpisode> {
+    private suspend fun parseDirectory(url: String, depth: Int = 4): List<SEpisode> {
         if (depth < 0) return emptyList()
 
         return try {
             val response = client.newCall(GET(url, headers)).execute()
             val body = response.body?.string() ?: return emptyList()
-            val baseUrl = response.request.url.toString().let { if (it.endsWith("/")) it else "$it/" }
+            val currentHttpUrl = response.request.url
 
             val fileEpisodes = mutableListOf<SEpisode>()
             val subDirs = mutableListOf<String>()
 
             // Regex for fast link extraction: <a href="...">
-            // Matches: <a [^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>
             val matcher = LINK_REGEX.matcher(body)
 
             while (matcher.find()) {
                 val href = matcher.group(1) ?: continue
-                val text = matcher.group(2)?.trim() ?: ""
+                val text = matcher.group(2)?.replace(Regex("<[^>]*>"), "")?.trim() ?: ""
 
                 if (href.contains("..") || href.startsWith("?") || href.contains("_h5ai") || 
                     href.contains("?C=") || href.contains("?O=") || isIgnored(text)) continue
 
-                val absUrl = if (href.startsWith("http")) href else baseUrl + href
+                val absUrl = currentHttpUrl.resolve(href)?.toString() ?: continue
 
                 if (isVideoFile(href)) {
                     fileEpisodes.add(SEpisode.create().apply {
@@ -431,7 +430,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                         this.name = try { URLDecoder.decode(text, "UTF-8") } catch(e:Exception) { text }
                         this.episode_number = -1f
                     })
-                } else if (href.endsWith("/")) {
+                } else if (href.endsWith("/") || absUrl.endsWith("/")) {
                      subDirs.add(absUrl)
                 }
             }
