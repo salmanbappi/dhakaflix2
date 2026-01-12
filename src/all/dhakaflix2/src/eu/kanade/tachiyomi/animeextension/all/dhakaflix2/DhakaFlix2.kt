@@ -128,7 +128,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                                 serverResults
                             }
                         }
-                    }.awaitAll().flatten().distinctBy { it.url }
+                    }.awaitAll().flatten().distinctBy { it.url }.take(100)
 
                     AnimesPage(sortByTitle(results, query), false)
                 }
@@ -137,7 +137,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         return super.getSearchAnime(page, query, filters)
     }
 
-    private fun searchOnServerWithRetry(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, retries: Int = 2) {
+    private fun searchOnServerWithRetry(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, retries: Int = 3) {
         var lastException: Exception? = null
         for (i in 0 until retries) {
             try {
@@ -145,7 +145,9 @@ class DhakaFlix2 : AnimeHttpSource() {
                 return
             } catch (e: Exception) {
                 lastException = e
-                Thread.sleep(500) // Brief wait before retry
+                if (i < retries - 1) {
+                    Thread.sleep(1500) // Longer wait before retry
+                }
             }
         }
         lastException?.let { throw it }
@@ -172,8 +174,8 @@ class DhakaFlix2 : AnimeHttpSource() {
 
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            // Refined regex matching both directories and potentially direct files
-            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":(null|\\d+)", Pattern.CASE_INSENSITIVE)
+            // Stricter regex matching folders or large media files only (ignoring small samples/meta)
+            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":(null|[5-9]\\d{7,}|\\d{9,})", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
@@ -213,7 +215,7 @@ class DhakaFlix2 : AnimeHttpSource() {
     }
 
     private fun isIgnored(text: String): Boolean {
-        val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai")
+        val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai", "Subtitle", "Extras", "Sample", "Trailer")
         return ignored.any { text.contains(it, ignoreCase = true) }
     }
 
@@ -421,7 +423,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         return parseDirectory(document.location())
     }
 
-    private suspend fun parseDirectory(url: String, depth: Int = 4): List<SEpisode> {
+    private suspend fun parseDirectory(url: String, depth: Int = 5): List<SEpisode> {
         if (depth < 0) return emptyList()
 
         return try {

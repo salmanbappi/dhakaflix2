@@ -94,30 +94,35 @@ jobs:
 
       - name: Push to Extensions Repo
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          MY_GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          # This requires a secret named 'GH_PAT' with repo scope
-          if [ -n "${{ secrets.GH_PAT }}" ]; then
-            git clone https://salmanbappi:${{ secrets.GH_PAT }}@github.com/salmanbappi/extensions-repo.git repo_tmp
-            
-            PKG_NAME="eu.kanade.tachiyomi.animeextension.all.dhakaflix2"
-            VERSION_CODE=$(grep "extVersionCode =" src/all/dhakaflix2/build.gradle | awk '{print $3}')
-            VERSION_NAME="14.$VERSION_CODE"
-            TARGET_NAME="$PKG_NAME-v$VERSION_NAME-c$VERSION_CODE.apk"
-            
-            mkdir -p repo_tmp/apk
-            cp src/all/dhakaflix2/build/outputs/apk/release/aniyomi-all.dhakaflix2-v$VERSION_NAME-release-unsigned-signed.apk repo_tmp/apk/$TARGET_NAME
-            
-            cd repo_tmp
-            git config user.name "Gemini Automation"
-            git config user.email "gemini@automation.bot"
-            git add apk/$TARGET_NAME
-            
-            # Update index via generate script in the repo
-            python generate_repo.py
-            git add index.min.json repo.json
-            
-            git commit -m "Update DhakaFlix 2 to v$VERSION_NAME"
-            git push https://salmanbappi:${{ secrets.GH_PAT }}@github.com/salmanbappi/extensions-repo.git main:main || git push
-          else
-            echo "Secret 'GH_PAT' not found. Skipping extension repo update."
+          if [ -z "$MY_GH_PAT" ]; then
+            echo "❌ ERROR: GH_PAT secret is EMPTY. Please check your repository secrets."
+            exit 1
           fi
+          
+          # Use x-access-token which is more stable for PATs in CI
+          git clone https://x-access-token:${MY_GH_PAT}@github.com/salmanbappi/extensions-repo.git repo_tmp
+          
+          PKG_NAME="eu.kanade.tachiyomi.animeextension.all.dhakaflix2"
+          VERSION_CODE=$(grep "extVersionCode =" src/all/dhakaflix2/build.gradle | awk '{print $3}')
+          VERSION_NAME="14.$VERSION_CODE"
+          TARGET_NAME="$PKG_NAME-v$VERSION_NAME-c$VERSION_CODE.apk"
+          
+          mkdir -p repo_tmp/apk
+          cp src/all/dhakaflix2/build/outputs/apk/release/aniyomi-all.dhakaflix2-v$VERSION_NAME-release-unsigned-signed.apk repo_tmp/apk/$TARGET_NAME
+          
+          cd repo_tmp
+          git config user.name "Gemini Automation"
+          git config user.email "gemini@automation.bot"
+          git add apk/$TARGET_NAME
+          
+          python generate_repo.py
+          git add index.min.json repo.json
+          
+          git commit -m "Update DhakaFlix 2 to v$VERSION_NAME"
+          # Force remote URL to include token for push
+          git remote set-url origin https://x-access-token:${MY_GH_PAT}@github.com/salmanbappi/extensions-repo.git
+          git push origin main
+

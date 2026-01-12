@@ -17,7 +17,7 @@ object Filters {
 
     fun getUrl(query: String, filters: AnimeFilterList?): String {
         if (query.isNotEmpty()) return query
-        if (filters == null) return "http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/%282025%29/"
+        if (filters == null) return "http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/%282026%29/"
 
         val categoryFilter = filters[1] as DhakaFlixSelect
         val yearFilter = filters[2] as DhakaFlixSelect
@@ -65,12 +65,12 @@ object Filters {
             }
             "TV Series" -> {
                 baseUrl = "http://172.16.50.12/DHAKA-FLIX-12"
-                // Default to A-L if "Any" is selected to show content
+                // Unicode exactness: ★ \u2605, ♥ \u2665, ♦ \u2666, — \u2014
                 val subPath = when (alphabet) {
                     "0-9" -> "TV Series \u2605  0  \u2014  9"
                     "G-M / M-R" -> "TV Series \u2666  M  \u2014  R"
                     "N-S / S-Z" -> "TV Series \u2666  S  \u2014  Z"
-                    else -> "TV Series \u2665  A  \u2014  L" // Default/A-L
+                    else -> "TV Series \u2665  A  \u2014  L" 
                 }
                 path = "TV-WEB-Series/$subPath"
             }
@@ -80,13 +80,12 @@ object Filters {
             }
             "Anime-TV Series" -> {
                 baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
-                // Default to A-F if "Any" is selected
                 val subPath = when (alphabet) {
                     "0-9" -> "Anime-TV Series \u2605  0  \u2014  9"
                     "G-M / M-R" -> "Anime-TV Series \u2665  G  \u2014  M"
                     "N-S / S-Z" -> "Anime-TV Series \u2666  N  \u2014  S"
                     "T-Z" -> "Anime-TV Series \u2666  T  \u2014  Z"
-                    else -> "Anime-TV Series \u2665  A  \u2014  F" // Default/A-F
+                    else -> "Anime-TV Series \u2665  A  \u2014  F"
                 }
                 path = "Anime & Cartoon TV Series/$subPath"
             }
@@ -124,7 +123,7 @@ object Filters {
         val supportsYear = when (category) {
             "Hindi Movies", "English Movies (1080p)", "Animation Movies", "IMDb Top-250 Movies" -> true
             "English Movies", "Kolkata Bangla Movies", "Foreign Language Movies", "3D Movies" -> {
-                // Server 7 categories - don't allow 2026 yet
+                // Server 7 categories - don't allow 2026 if not exist
                 year != "Any" && year != "2026"
             }
             "South Indian Movies", "South Hindi Dubbed" -> true
