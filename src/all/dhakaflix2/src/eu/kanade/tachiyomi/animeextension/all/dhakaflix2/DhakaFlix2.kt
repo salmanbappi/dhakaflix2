@@ -72,8 +72,8 @@ class DhakaFlix2 : AnimeHttpSource() {
             }
         })
         .dispatcher(okhttp3.Dispatcher().apply {
-            maxRequests = 100
-            maxRequestsPerHost = 100
+            maxRequests = 20
+            maxRequestsPerHost = 20
         })
         .build()
 
@@ -395,7 +395,7 @@ class DhakaFlix2 : AnimeHttpSource() {
         })
     }
 
-    private val semaphore = Semaphore(50)
+    private val semaphore = Semaphore(10)
 
     private suspend fun parseDirectoryParallel(document: Document): List<SEpisode> {
         return parseDirectory(document.location())
@@ -406,23 +406,25 @@ class DhakaFlix2 : AnimeHttpSource() {
 
         return try {
             val response = client.newCall(GET(url, headers)).execute()
-            val body = response.body?.string() ?: return emptyList()
+            val document = response.asJsoup()
             val currentHttpUrl = response.request.url
+            val normalizedBaseUrl = if (url.endsWith("/")) url else "$url/"
 
             val fileEpisodes = mutableListOf<SEpisode>()
             val subDirs = mutableListOf<String>()
 
-            // Regex for fast link extraction: <a href="...">
-            val matcher = LINK_REGEX.matcher(body)
-
-            while (matcher.find()) {
-                val href = matcher.group(1) ?: continue
-                val text = matcher.group(2)?.replace(Regex("<[^>]*>"), "")?.trim() ?: ""
+            document.select("a").forEach { element ->
+                val href = element.attr("href")
+                val text = element.text().trim()
 
                 if (href.contains("..") || href.startsWith("?") || href.contains("_h5ai") || 
-                    href.contains("?C=") || href.contains("?O=") || isIgnored(text)) continue
+                    href.contains("?C=") || href.contains("?O=") || isIgnored(text)) return@forEach
 
-                val absUrl = currentHttpUrl.resolve(href)?.toString() ?: continue
+                val absHttpUrl = currentHttpUrl.resolve(href) ?: return@forEach
+                val absUrl = absHttpUrl.toString()
+
+                // Strict Child-Only Check: Only follow links that are children of the current folder
+                if (!absUrl.startsWith(normalizedBaseUrl)) return@forEach
 
                 if (isVideoFile(href)) {
                     fileEpisodes.add(SEpisode.create().apply {
@@ -435,7 +437,7 @@ class DhakaFlix2 : AnimeHttpSource() {
                 }
             }
 
-            // Early Exit: If videos found, don't recurse deeper
+            // Early Exit: If videos found, don't recurse deeper into this folder's subdirectories
             if (fileEpisodes.isNotEmpty()) {
                 return fileEpisodes.sortedBy { it.name }.reversed()
             }
