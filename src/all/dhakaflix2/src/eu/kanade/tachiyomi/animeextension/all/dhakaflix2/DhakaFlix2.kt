@@ -189,29 +189,31 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         val res = if (query.isNotEmpty()) {
-            withTimeoutOrNull(30000) {
+            withTimeoutOrNull(35000) {
                 coroutineScope {
                     val servers = listOf(
-                        "http://172.16.50.14" to "DHAKA-FLIX-14",
-                        "http://172.16.50.12" to "DHAKA-FLIX-12",
-                        "http://172.16.50.9" to "DHAKA-FLIX-9",
-                        "http://172.16.50.7" to "DHAKA-FLIX-7"
+                        Triple("http://172.16.50.14", "DHAKA-FLIX-14", listOf("/DHAKA-FLIX-14/")),
+                        Triple("http://172.16.50.12", "DHAKA-FLIX-12", listOf("/DHAKA-FLIX-12/", "/DHAKA-FLIX-12/TV-WEB-Series/")),
+                        Triple("http://172.16.50.9", "DHAKA-FLIX-9", listOf("/DHAKA-FLIX-9/", "/DHAKA-FLIX-9/Anime & Cartoon TV Series/")),
+                        Triple("http://172.16.50.7", "DHAKA-FLIX-7", listOf("/DHAKA-FLIX-7/"))
                     )
 
                     val queries = listOf(query, "$query movie").distinct()
 
-                    val results = servers.flatMap { server ->
-                        queries.map { q ->
-                            async(Dispatchers.IO) {
-                                val serverResults = mutableListOf<SAnime>()
-                                val timeout = 8000L
-                                try {
-                                    searchOnServerWithRetry(server.first, server.second, q, serverResults, timeout)
-                                } catch (e: Exception) {}
-                                serverResults
+                    val results = servers.flatMap { (baseUrl, serverName, paths) ->
+                        paths.flatMap { path ->
+                            queries.map { q ->
+                                async(Dispatchers.IO) {
+                                    val serverResults = mutableListOf<SAnime>()
+                                    val timeout = 10000L
+                                    try {
+                                        searchOnServerWithRetry(baseUrl, serverName, q, serverResults, timeout, path)
+                                    } catch (e: Exception) {}
+                                    serverResults
+                                }
                             }
                         }
-                    }.awaitAll().flatten().distinctBy { it.url }.take(50)
+                    }.awaitAll().flatten().distinctBy { it.url }.take(60)
 
                     AnimesPage(sortByTitle(results, query), false)
                 }
@@ -223,11 +225,11 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         return res.also { enrichAnimes(it.animes) }
     }
 
-    private fun searchOnServerWithRetry(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, retries: Int = 1) {
+    private fun searchOnServerWithRetry(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, path: String, retries: Int = 1) {
         var lastException: Exception? = null
         for (i in 0 until retries) {
             try {
-                searchOnServer(serverUrl, serverName, query, results, timeout)
+                searchOnServer(serverUrl, serverName, query, results, timeout, path)
                 return
             } catch (e: Exception) {
                 lastException = e
@@ -239,13 +241,13 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         lastException?.let { throw it }
     }
 
-    private fun searchOnServer(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long) {
+    private fun searchOnServer(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, path: String) {
         val searchClient = client.newBuilder()
             .readTimeout(timeout, TimeUnit.MILLISECONDS)
             .build()
 
         val searchUrl = "$serverUrl/$serverName/"
-        val jsonPayload = "{\"action\":\"get\",\"search\":{\"href\":\"/$serverName/\",\"pattern\":\"$query\",\"ignorecase\":true}}"
+        val jsonPayload = "{\"action\":\"get\",\"search\":{\"href\":\"$path\",\"pattern\":\"$query\",\"ignorecase\":true}}"
         val body = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
         
         val request = POST(searchUrl, headers, body)
@@ -254,7 +256,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             val bodyString = response.body?.string() ?: return
             
             if (serverUrl.contains("172.16.50.7")) {
-                Server7Parser.parseServer7Response(bodyString, serverUrl, serverName, results)
+                Server7Parser.parseServer7Response(bodyString, serverUrl, serverName, results, query)
                 return
             }
 
@@ -266,6 +268,9 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             while (matcher.find()) {
                 var href = matcher.group(1).replace('\\', '/').trim()
                 href = href.replace(Regex("/+"), "/")
+                
+                val size = matcher.group(2)
+                val isFolder = size == "null"
                 
                 var cleanHrefForTitle = href
                 while (cleanHrefForTitle.endsWith("/")) {
@@ -279,11 +284,14 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                     rawTitle.trim()
                 }
                 
-                if (title.isEmpty() || isIgnored(title)) continue
+                if (title.isEmpty() || isIgnored(title, query)) continue
+                
+                // If it's a file, we only add it if we don't have a folder with the same name logic
+                if (!isFolder && results.any { it.url.contains(cleanHrefForTitle) }) continue
                 
                 val anime = SAnime.create().apply {
                     this.title = title
-                    val finalHref = if (href.endsWith("/")) href else "$href/"
+                    val finalHref = if (href.endsWith("/") || isFolder) (if (href.endsWith("/")) href else "$href/") else href
                     this.url = "$hostUrl$finalHref"
                     
                     val thumbSuffix = if (serverName.contains("9")) "a11.jpg" else "a_AL_.jpg"
@@ -292,16 +300,32 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 
                 synchronized(results) {
                     if (results.none { it.url == anime.url }) {
-                        results.add(anime)
+                        if (isFolder) {
+                            results.add(0, anime) // Prioritize folders
+                        } else {
+                            results.add(anime)
+                        }
                     }
                 }
             }
         }
     }
 
-    private fun isIgnored(text: String): Boolean {
+    private fun isIgnored(text: String, query: String = ""): Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai", "Subtitle", "Extras", "Sample", "Trailer")
-        return ignored.any { text.contains(it, ignoreCase = true) }
+        if (ignored.any { text.contains(it, ignoreCase = true) }) return true
+        
+        // Filter out uploader tags that cause false positives in search
+        val uploaderTags = listOf("-LOKI", "-LOKiHD", "-TDoc", "-Tuna", "-PSA", "-Pahe", "-QxR", "-YIFY", "-RARBG")
+        if (uploaderTags.any { text.endsWith(it, ignoreCase = true) || text.contains("$it.") || text.contains("$it ") }) {
+             // Only ignore if the query itself is not the tag
+             if (query.isNotEmpty() && uploaderTags.any { it.substring(1).equals(query, ignoreCase = true) }) {
+                 return false
+             }
+             return true
+        }
+
+        return false
     }
 
     private fun sortByTitle(list: List<SAnime>, query: String): List<SAnime> {
@@ -374,7 +398,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private fun isValidDirectoryItem(title: String, url: String): Boolean {
         val lowerTitle = title.lowercase()
-        if (isIgnored(lowerTitle)) return false
+        if (isIgnored(lowerTitle, "")) return false
         if (url.contains("../") || url.contains("?")) return false
         return true
     }

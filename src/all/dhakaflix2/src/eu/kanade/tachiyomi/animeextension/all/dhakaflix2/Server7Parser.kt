@@ -8,7 +8,7 @@ import java.util.regex.Pattern
 object Server7Parser {
     private val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":(null|\\\\d+)", Pattern.CASE_INSENSITIVE)
 
-    fun parseServer7Response(bodyString: String, serverUrl: String, serverName: String, results: MutableList<SAnime>) {
+    fun parseServer7Response(bodyString: String, serverUrl: String, serverName: String, results: MutableList<SAnime>, query: String = "") {
         val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
         val matcher = pattern.matcher(bodyString)
         
@@ -32,10 +32,9 @@ object Server7Parser {
             }
             
             // For Server 7, we prioritize folders as they represent the movie/series entry
-            if (title.isEmpty() || isIgnored(title)) continue
+            if (title.isEmpty() || isIgnored(title, query)) continue
             
             // If it's a file, we only add it if we don't have a folder with the same name logic
-            // But usually h5ai search returns both. We prefer folders for "Anime" entries.
             if (!isFolder && results.any { it.url.contains(cleanHrefForTitle) }) continue
 
             val anime = SAnime.create().apply {
@@ -47,14 +46,27 @@ object Server7Parser {
             
             synchronized(results) {
                 if (results.none { it.url == anime.url }) {
-                    results.add(anime)
+                    if (isFolder) {
+                        results.add(0, anime)
+                    } else {
+                        results.add(anime)
+                    }
                 }
             }
         }
     }
 
-    private fun isIgnored(text: String): Boolean {
+    private fun isIgnored(text: String, query: String = ""): Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai")
-        return ignored.any { text.contains(it, ignoreCase = true) }
+        if (ignored.any { text.contains(it, ignoreCase = true) }) return true
+
+        val uploaderTags = listOf("-LOKI", "-LOKiHD", "-TDoc", "-Tuna", "-PSA", "-Pahe", "-QxR", "-YIFY", "-RARBG")
+        if (uploaderTags.any { text.endsWith(it, ignoreCase = true) || text.contains("$it.") || text.contains("$it ") }) {
+             if (query.isNotEmpty() && uploaderTags.any { it.substring(1).equals(query, ignoreCase = true) }) {
+                 return false
+             }
+             return true
+        }
+        return false
     }
 }
