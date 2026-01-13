@@ -468,7 +468,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     private fun getMovieMedia(document: Document): List<SEpisode> {
         val linkElement = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], a[href*=/s/lazyload/], .download-link a").lastOrNull()
         val url = linkElement?.attr("abs:href")?.let { it.replace(" ", "%20") } ?: ""
-        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "").trim() ?: ""
+        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
         
         return listOf(SEpisode.create().apply {
             this.url = url
@@ -481,7 +481,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     private val semaphore = Semaphore(10)
 
     private suspend fun parseDirectoryParallel(document: Document): List<SEpisode> {
-        return parseDirectory(document.location(), 3, document)
+        return parseDirectory(document.location() ?: "", 3, document)
     }
 
     private suspend fun parseDirectory(url: String, depth: Int = 3, initialDocument: Document? = null): List<SEpisode> {
