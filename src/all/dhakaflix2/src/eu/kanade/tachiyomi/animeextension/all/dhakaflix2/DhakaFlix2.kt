@@ -151,7 +151,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         }
         
         u = IP_HTTP_REGEX.replace(u, "$1/http")
-        u = DOUBLE_PROTOCOL_REGEX.replace(u, "http$1://")
+        u = DOUBLE_PROTOCOL_REGEX.replace(u, "http$1://$2")
         u = u.replace(":://://", ":://")
         u = MULTI_SLASH_REGEX.replace(u, "/")
         
@@ -263,4 +263,405 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\\\"href\\\":\\\"([^\\\"]+)\\\\
+            val pattern = Pattern.compile("\"href\":\"([^\"]+)\\n")
+        }
+    }
+
+    private fun getThumbnail(url: String, serverName: String): String {
+        val base = if (url.endsWith("/")) url else "$url/"
+        val thumbName = when {
+            serverName.contains("9") -> "aay.jpg" 
+            serverName.contains("12") || serverName.contains("14") -> "a_AL_.jpg"
+            else -> "a11.jpg"
+        }
+        return fixUrl(base + thumbName)
+    }
+
+    private fun isIgnored(text: String, query: String = ""): Boolean {
+        val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai", "Subtitle", "Extras", "Sample", "Trailer")
+        if (ignored.any { text.contains(it, ignoreCase = true) }) return true
+        
+        val uploaderTags = listOf("-LOKI", "-LOKiHD", "-TDoc", "-Tuna", "-PSA", "-Pahe", "-QxR", "-YIFY", "-RARBG")
+        if (uploaderTags.any { (text.endsWith(it, ignoreCase = true) || text.contains("$it.") || text.contains("$it ")) }) {
+             if (query.isNotEmpty() && uploaderTags.any { it.substring(1).equals(query, ignoreCase = true) }) {
+                 return false
+             }
+             return true
+        }
+        return false
+    }
+
+    private fun sortByTitle(list: List<SAnime>, query: String): List<SAnime> {
+        val lowerQuery = query.lowercase()
+        return list.sortedWith(compareByDescending<SAnime> {
+            val lowerTitle = it.title.lowercase()
+            when {
+                lowerTitle == lowerQuery -> 100.0
+                lowerTitle.startsWith(lowerQuery) -> 90.0 + diceCoefficient(it.title, query)
+                else -> diceCoefficient(it.title, query)
+            }
+        }.thenBy { it.title.length })
+    }
+
+    private fun diceCoefficient(s1: String, s2: String): Double {
+        val str1 = s1.lowercase()
+        val str2 = s2.lowercase()
+        if (str1.length < 2 || str2.length < 2) return 0.0
+        
+        val pairs1 = (0 until str1.length - 1).map { str1.substring(it, it + 2) }.toSet()
+        val pairs2 = (0 until str2.length - 1).map { str2.substring(it, it + 2) }
+        
+        var intersection = 0
+        for (pair in pairs2) {
+            if (pair in pairs1) intersection++
+        }
+        
+        return 2.0 * intersection / (str1.length + str2.length - 2)
+    }
+
+    override fun popularAnimeRequest(page: Int): Request {
+        return GET("http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/%282025%29/", headers)
+    }
+
+    override fun popularAnimeParse(response: Response): AnimesPage {
+        val document = response.asJsoup()
+        val cards = document.select("div.card")
+        val animeList = if (cards.isNotEmpty()) {
+            cards.mapNotNull {
+                val link = it.selectFirst("h5 a")
+                val title = link?.text() ?: ""
+                val url = link?.attr("abs:href") ?: ""
+                if (title.isNotEmpty() && url.isNotEmpty()) {
+                    SAnime.create().apply {
+                        this.title = title
+                        this.url = fixUrl(url)
+                        val img = it.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
+                        this.thumbnail_url = (img?.attr("abs:data-src")?.takeIf { it.isNotEmpty() } 
+                            ?: img?.attr("abs:data-lazy-src")?.takeIf { it.isNotEmpty() }
+                            ?: img?.attr("abs:src") ?: "").replace(" ", "%20")
+                    }
+                } else null
+            }
+        } else {
+            document.select("a").mapNotNull {
+                val title = it.text().trim()
+                val url = it.attr("abs:href")
+                if (title.isNotEmpty() && isValidDirectoryItem(title, url)) {
+                    SAnime.create().apply {
+                        this.title = if (title.endsWith("/")) title.dropLast(1) else title
+                        this.url = fixUrl(url)
+                        val finalUrl = if (url.endsWith("/")) url else "$url/"
+                        this.thumbnail_url = getThumbnail(finalUrl, "") 
+                    }
+                } else null
+            }
+        }
+        return AnimesPage(animeList, false)
+    }
+
+    private fun isValidDirectoryItem(title: String, url: String): Boolean {
+        val lowerTitle = title.lowercase()
+        if (isIgnored(lowerTitle, "")) return false
+        if (url.contains("../") || url.contains("?")) return false
+        return true
+    }
+
+    override fun latestUpdatesRequest(page: Int) = popularAnimeRequest(page)
+    override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
+
+    private var dynamicCategories: Array<String> = emptyArray()
+
+    override fun getFilterList(): AnimeFilterList {
+        if (dynamicCategories.isEmpty()) {
+            fetchFilters()
+        }
+        return Filters.getFilterList(dynamicCategories)
+    }
+
+    private fun fetchFilters() {
+        thread {
+            try {
+                val response = client.newCall(GET("$baseUrl/", headers)).execute()
+                val doc = response.asJsoup()
+                val sidebar = doc.select("ul.nav-sidebar a, .sidebar-menu a")
+                dynamicCategories = sidebar.map { it.text().trim() }.filter { it.isNotEmpty() }.toTypedArray()
+            } catch (e: Exception) {}
+        }
+    }
+
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
+        return GET(fixUrl(Filters.getUrl(query, filters)), headers)
+    }
+    override fun searchAnimeParse(response: Response) = popularAnimeParse(response)
+
+    override suspend fun getAnimeDetails(anime: SAnime): SAnime {
+        val parsedAnime = super.getAnimeDetails(anime)
+        val useTmdb = preferences.getBoolean(PREF_USE_TMDB_COVERS, false)
+        if (useTmdb) {
+            try {
+                val tmdbCover = fetchTmdbImage(anime.title)
+                if (tmdbCover != null) {
+                    parsedAnime.thumbnail_url = tmdbCover
+                    anime.thumbnail_url = tmdbCover
+                }
+            } catch (e: Exception) {}
+        }
+        return parsedAnime
+    }
+
+    private fun fetchTmdbImage(title: String): String? {
+        val cacheKey = "tmdb_cover_${title.hashCode()}"
+        val cached = preferences.getString(cacheKey, null)
+        if (cached != null) return cached.takeIf { it.isNotEmpty() }
+
+        val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
+        if (apiKey.isBlank()) return null
+
+        var cleanTitle = title
+            .replace(Regex("(?i)Doraemon\s+The\s+Movie-?", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("(?i)\(.*?\)"), "") 
+            .replace(Regex("(?i)\[.*?\]"), "") 
+            .replace(Regex("(?i)\d{3,4}p|576p|480p|720p|1080p|2160p|4k"), "")
+            .replace(Regex("(?i)HDTC|HDRip|WEB-DL|BluRay|BRRip|BDRip|DVDRip|HC|HQ|x264|x265|HEVC|H\.264|H\.265"), "")
+            .replace(Regex("(?i)Hindi Dubbed|Dual Audio|MSubs|ESub|Sub", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("[-_.]"), " ")
+            .replace(Regex("\s+"), " ")
+            .trim()
+        
+        val url = "https://api.themoviedb.org/3/search/multi".toHttpUrl().newBuilder()
+            .addQueryParameter("api_key", apiKey)
+            .addQueryParameter("query", cleanTitle)
+            .build()
+        val request = Request.Builder().url(url).build()
+        
+        try {
+            client.newCall(request).execute().use {
+                val body = it.body?.string() ?: return null
+                val json = JSONObject(body)
+                val results = json.optJSONArray("results") ?: return null
+                if (results.length() > 0) {
+                    val first = results.getJSONObject(0)
+                    val posterPath = first.optString("poster_path")
+                    if (posterPath.isNotEmpty() && posterPath != "null") {
+                        val thumb = "https://image.tmdb.org/t/p/w500$posterPath"
+                        preferences.edit().putString(cacheKey, thumb).apply()
+                        return thumb
+                    }
+                }
+            }
+        } catch (e: Exception) {}
+        
+        preferences.edit().putString(cacheKey, "").apply()
+        return null
+    }
+
+    override fun animeDetailsRequest(anime: SAnime): Request {
+        return GET(fixUrl(anime.url), headers)
+    }
+
+    override fun animeDetailsParse(response: Response): SAnime {
+        val document = response.asJsoup()
+        val mediaType = getMediaType(document)
+        
+        return if (mediaType != null) {
+            if (mediaType == "m") getMovieDetails(document) else getSeriesDetails(document)
+        } else {
+            SAnime.create().apply {
+                status = SAnime.COMPLETED
+                val img = document.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
+                var thumb = img?.attr("abs:src") ?: ""
+                if (thumb.isEmpty()) {
+                    thumb = document.selectFirst("a[href~=(?i)\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
+                }
+                thumbnail_url = thumb.replace(" ", "%20")
+            }
+        }
+    }
+
+    private fun getMediaType(document: Document): String? {
+        val html = document.select("script").html()
+        return when {
+            html.contains("/m/lazyload/") -> "m"
+            html.contains("/s/lazyload/") -> "s"
+            html.contains("/s/view/") -> "s"
+            else -> null
+        }
+    }
+
+    private fun getMovieDetails(document: Document) = SAnime.create().apply {
+        status = SAnime.COMPLETED
+        thumbnail_url = document.selectFirst("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
+            ?.attr("abs:src")?.replace(" ", "%20") ?: ""
+        genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
+        description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
+    }
+
+    private fun getSeriesDetails(document: Document) = SAnime.create().apply {
+        status = SAnime.ONGOING
+        thumbnail_url = document.selectFirst("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
+            ?.attr("abs:src")?.replace(" ", "%20") ?: ""
+        genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
+        description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
+    }
+
+    override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
+        return withContext(Dispatchers.IO) {
+            withTimeoutOrNull(45000) {
+                val response = client.newCall(GET(fixUrl(anime.url), headers)).execute()
+                val document = response.asJsoup()
+                val mediaType = getMediaType(document)
+
+                val episodes = when (mediaType) {
+                    "s" -> {
+                        val extracted = extractEpisodes(document)
+                        if (extracted.isNotEmpty()) sortEpisodes(extracted) else parseDirectoryParallel(document)
+                    }
+                    "m" -> getMovieMedia(document)
+                    else -> parseDirectoryParallel(document)
+                }
+
+                if (episodes.isEmpty()) throw Exception("No results found")
+                episodes
+            } ?: emptyList()
+        }
+    }
+
+    private fun extractEpisodes(document: Document): List<EpisodeData> {
+        return document.select("div.card, div.episode-item, div.download-link").mapNotNull {
+            val titleElement = it.selectFirst("h5") ?: return@mapNotNull null
+            val rawTitle = titleElement.ownText().trim()
+            val name = rawTitle.split("&nbsp;").first().trim()
+            val url = it.selectFirst("h5 a")?.attr("abs:href")?.trim() ?: ""
+            val qualityText = it.selectFirst("h5 .badge-fill")?.text() ?: ""
+            val quality = sizeRegex.replace(qualityText, "$1").trim()
+            val epName = it.selectFirst("h4")?.ownText()?.trim() ?: ""
+            val size = it.selectFirst("h4 .badge-outline")?.text()?.trim() ?: ""
+            
+            if (name.isNotEmpty() && url.isNotEmpty()) {
+                EpisodeData(name, url, quality, epName, size)
+            } else null
+        }
+    }
+
+    private fun getMovieMedia(document: Document): List<SEpisode> {
+        val linkElement = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], a[href*=/s/lazyload/], .download-link a").lastOrNull()
+        val url = linkElement?.attr("abs:href")?.let { it.replace(" ", "%20") } ?: ""
+        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
+        
+        return listOf(SEpisode.create().apply {
+            this.url = url
+            this.name = "Movie"
+            this.episode_number = 1f
+            this.scanlator = quality
+        })
+    }
+
+    private val semaphore = Semaphore(5)
+
+    private suspend fun parseDirectoryParallel(document: Document): List<SEpisode> {
+        return parseDirectory(document.location() ?: "", 3, document)
+    }
+
+    private suspend fun parseDirectory(url: String, depth: Int = 3, initialDocument: Document? = null): List<SEpisode> {
+        if (depth < 0) return emptyList()
+
+        return try {
+            val document: Document
+            val currentHttpUrl: HttpUrl
+
+            if (initialDocument != null) {
+                document = initialDocument
+                currentHttpUrl = document.location()?.toHttpUrlOrNull() ?: return emptyList()
+            } else {
+                val response = client.newCall(GET(url, headers)).execute()
+                document = response.asJsoup()
+                currentHttpUrl = response.request.url
+            }
+
+            val normalizedBaseUrl = if (url.endsWith("/")) url else "$url/"
+
+            val fileEpisodes = mutableListOf<SEpisode>()
+            val subDirs = mutableListOf<String>()
+
+            document.select("a").forEach { element ->
+                val href = element.attr("href")
+                val text = element.text().trim()
+
+                if (href.contains("..") || href.startsWith("?") || href.contains("_h5ai") || 
+                    href.contains("?C=") || href.contains("?O=") || isIgnored(text)) return@forEach
+
+                val absHttpUrl = currentHttpUrl.resolve(href) ?: return@forEach
+                val absUrl = absHttpUrl.toString()
+
+                if (!absUrl.startsWith(normalizedBaseUrl)) return@forEach
+
+                if (isVideoFile(href)) {
+                    fileEpisodes.add(SEpisode.create().apply {
+                        this.url = absUrl
+                        this.name = try { URLDecoder.decode(text, "UTF-8") } catch(e:Exception) { text }
+                        this.episode_number = -1f
+                    })
+                } else if (href.endsWith("/") || absUrl.endsWith("/")) {
+                     subDirs.add(absUrl)
+                }
+            }
+
+            if (fileEpisodes.isNotEmpty()) {
+                return fileEpisodes.sortedBy { it.name }.reversed()
+            }
+
+            coroutineScope {
+                subDirs.map { dir ->
+                    async(Dispatchers.IO) {
+                        semaphore.withPermit {
+                            parseDirectory(dir, depth - 1)
+                        }
+                    }
+                }.awaitAll().flatten()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun isVideoFile(href: String): Boolean {
+        val h = href.lowercase()
+        return listOf(".mkv", ".mp4", ".avi", ".ts", ".m4v", ".webm", ".mov").any { h.endsWith(it) || h.contains("$it?") }
+    }
+
+    private fun sortEpisodes(list: List<EpisodeData>): List<SEpisode> {
+        var episodeCount = 0f
+        return list.map {
+            SEpisode.create().apply {
+                url = it.videoUrl
+                name = "${it.seasonEpisode} - ${it.episodeName}".trim()
+                episode_number = ++episodeCount
+                scanlator = "${it.quality}  ${it.size}"
+            }
+        }.reversed()
+    }
+
+    override suspend fun getVideoList(episode: SEpisode): List<Video> {
+        return listOf(Video(episode.url, "Video", episode.url))
+    }
+
+    override fun episodeListParse(response: Response): List<SEpisode> = throw Exception("Not used")
+    override fun videoListParse(response: Response): List<Video> = throw Exception("Not used")
+
+    data class EpisodeData(
+        val seasonEpisode: String,
+        val videoUrl: String,
+        val quality: String,
+        val episodeName: String,
+        val size: String
+    )
+
+    companion object {
+        private const val PREF_TMDB_API_KEY = "tmdb_api_key"
+        private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
+        private val sizeRegex = Regex("(\d+\.\d+ [GM]B|\d+ [GM]B).*", RegexOption.IGNORE_CASE)
+        private val IP_HTTP_REGEX = Regex("(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*http", RegexOption.IGNORE_CASE)
+        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE)
+        private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
+    }
+}
