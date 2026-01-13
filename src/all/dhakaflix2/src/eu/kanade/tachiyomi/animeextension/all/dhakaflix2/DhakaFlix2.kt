@@ -111,20 +111,19 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         }
         screen.addPreference(useTmdbPref)
 
-        androidx.preference.Preference(screen.context).apply {
-            title = "Clear TMDb Cache"
-            summary = "Clears all cached TMDb poster URLs"
-            setOnPreferenceClickListener {
-                val editor = preferences.edit()
-                preferences.all.keys.filter { it.startsWith("tmdb_cover_") }.forEach {
-                    editor.remove(it)
-                }
-                editor.apply()
-                android.widget.Toast.makeText(screen.context, "TMDb Cache Cleared", android.widget.Toast.LENGTH_SHORT).show()
-                true
+        val clearCachePref = androidx.preference.Preference(screen.context)
+        clearCachePref.title = "Clear TMDb Cache"
+        clearCachePref.summary = "Clears all cached TMDb poster URLs"
+        clearCachePref.setOnPreferenceClickListener {
+            val editor = preferences.edit()
+            preferences.all.keys.filter { it.startsWith("tmdb_cover_") }.forEach {
+                editor.remove(it)
             }
-            screen.addPreference(this)
+            editor.apply()
+            android.widget.Toast.makeText(screen.context, "TMDb Cache Cleared", android.widget.Toast.LENGTH_SHORT).show()
+            true
         }
+        screen.addPreference(clearCachePref)
     }
 
     private fun fixUrl(url: String): String {
