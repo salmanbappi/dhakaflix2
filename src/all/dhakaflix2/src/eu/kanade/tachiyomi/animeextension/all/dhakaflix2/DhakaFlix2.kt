@@ -67,7 +67,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
         .connectionPool(okhttp3.ConnectionPool(20, 5, TimeUnit.MINUTES))
-        .addInterceptor {
+        .addInterceptor { chain ->
             val original = chain.request()
             val requestUrl = original.url
             val referer = "${requestUrl.scheme}://${requestUrl.host}/"
@@ -217,7 +217,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
 
-                val allResults = searchTasks.distinct().map {
+                val allResults = searchTasks.distinct().map { task ->
                     async(Dispatchers.IO) {
                         val serverResults = mutableListOf<SAnime>()
                         try {
@@ -256,7 +256,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val searchClient = client.newBuilder().readTimeout(timeout, TimeUnit.MILLISECONDS).build()
         val request = POST(searchUrl, headers, body)
         
-        searchClient.newCall(request).execute().use {
+        searchClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return
             val bodyString = response.body?.string() ?: return
             
