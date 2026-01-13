@@ -196,7 +196,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         if (query.isEmpty()) return super.getSearchAnime(page, query, filters)
 
         val now = System.currentTimeMillis()
-        // Cache search results for 20 minutes to improve navigation speed
         if (searchCache.containsKey(query) && now - (cacheTime[query] ?: 0) < 1200000) {
             return AnimesPage(searchCache[query]!!, false)
         }
@@ -211,19 +210,17 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                     "http://172.16.50.7" to "DHAKA-FLIX-7"
                 ).forEach { (baseUrl, serverName) ->
                     searchTasks.add(Triple(baseUrl, serverName, "/$serverName/"))
-                    // Target slow Server 9 specifically if looking for Anime
                     if (serverName == "DHAKA-FLIX-9" && (query.contains("Doraemon", true) || query.contains("Anime", true))) {
                          searchTasks.add(Triple(baseUrl, serverName, "/$serverName/Anime & Cartoon TV Series/"))
                     }
                 }
 
-                val allResults = searchTasks.distinct().map { task ->
+                val allResults = searchTasks.distinct().map {
                     async(Dispatchers.IO) {
                         val serverResults = mutableListOf<SAnime>()
                         try {
-                            // Lower timeout for slow Server 9 to avoid overall lag
-                            val timeout = if (task.second.contains("9")) 15000L else 25000L
-                            searchOnServer(task.first, task.second, query, serverResults, timeout, task.third)
+                            val timeout = if (it.second.contains("9")) 15000L else 25000L
+                            searchOnServer(it.first, it.second, query, serverResults, timeout, it.third)
                         } catch (e: Exception) {}
                         serverResults
                     }
@@ -266,11 +263,11 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             }
 
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
-            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":(null|\\d+)", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":(null|\d+)", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
-                var href = matcher.group(1).replace('\\', '/').trim()
+                var href = matcher.group(1).replace('\', '/').trim()
                 href = href.replace(Regex("/{2,}"), "/")
                 
                 var cleanHrefForTitle = href
@@ -286,29 +283,28 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
                 
                 if (title.isEmpty() || isIgnored(title, query)) continue
-                if (!isFolder(matcher.group(2)) && results.any { it.url.contains(cleanHrefForTitle) }) continue
+                
+                val isFolderItem = matcher.group(2) == "null" || matcher.group(2) == null
+                if (!isFolderItem && results.any { it.url.contains(cleanHrefForTitle) }) continue
                 
                 val anime = SAnime.create().apply {
                     this.title = title
-                    val isFolderItem = isFolder(matcher.group(2))
                     val finalHref = if (href.endsWith("/") || isFolderItem) (if (href.endsWith("/")) href else "$href/") else href
                     this.url = "$hostUrl$finalHref"
-                    // Zero image loading by default. Only set if TMDb enrichs it later.
                     this.thumbnail_url = ""
                 }
                 
                 synchronized(results) {
                     if (results.none { it.url == anime.url }) {
-                        if (href.endsWith("/") || isFolder(matcher.group(2))) results.add(0, anime) else results.add(anime)
+                        if (href.endsWith("/") || isFolderItem) results.add(0, anime) else results.add(anime)
                     }
                 }
             }
         }
     }
 
-    private fun isFolder(size: String?): Boolean = size == null || size == "null"
-
-    private fun isIgnored(text: String, query: String = ""): Boolean {
+    private fun isIgnored(text: String, query: String = ""):
+ Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai", "Subtitle", "Extras", "Sample", "Trailer")
         if (ignored.any { text.contains(it, ignoreCase = true) }) return true
         
@@ -358,7 +354,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val document = response.asJsoup()
         val cards = document.select("div.card")
         val animeList = if (cards.isNotEmpty()) {
-            cards.mapNotNull {
+            cards.mapNotNull { card ->
                 val link = card.selectFirst("h5 a")
                 val title = link?.text() ?: ""
                 val url = link?.attr("abs:href") ?: ""
@@ -366,15 +362,14 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                     SAnime.create().apply {
                         this.title = title
                         this.url = fixUrl(url)
-                        // No default thumbnail
                         this.thumbnail_url = ""
                     }
                 } else null
             }
         } else {
-            document.select("a").mapNotNull {
-                val title = it.text().trim()
-                val url = it.attr("abs:href")
+            document.select("a").mapNotNull { element ->
+                val title = element.text().trim()
+                val url = element.attr("abs:href")
                 if (title.isNotEmpty() && isValidDirectoryItem(title, url)) {
                     SAnime.create().apply {
                         this.title = if (title.endsWith("/")) title.dropLast(1) else title
@@ -462,8 +457,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val request = Request.Builder().url(url).build()
         
         try {
-            client.newCall(request).execute().use {
-                val body = it.body?.string() ?: return null
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: return null
                 val json = JSONObject(body)
                 val results = json.optJSONArray("results") ?: return null
                 if (results.length() > 0) {
@@ -547,7 +542,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     private fun extractEpisodes(document: Document): List<EpisodeData> {
-        return document.select("div.card, div.episode-item, div.download-link").mapNotNull {
+        return document.select("div.card, div.episode-item, div.download-link").mapNotNull { element ->
             val titleElement = element.selectFirst("h5") ?: return@mapNotNull null
             val rawTitle = titleElement.ownText().trim()
             val name = rawTitle.split("&nbsp;").first().trim()
@@ -603,9 +598,9 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             val fileEpisodes = mutableListOf<SEpisode>()
             val subDirs = mutableListOf<String>()
 
-            document.select("a").forEach {
-                val href = it.attr("href")
-                val text = it.text().trim()
+            document.select("a").forEach { element ->
+                val href = element.attr("href")
+                val text = element.text().trim()
 
                 if (href.contains("..") || href.startsWith("?") || href.contains("_h5ai") || 
                     href.contains("?C=") || href.contains("?O=") || isIgnored(text)) return@forEach
@@ -679,9 +674,9 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
         private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*", RegexOption.IGNORE_CASE)
-        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http", RegexOption.IGNORE_CASE)
-        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE)
+        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*")
+        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http")
+        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
         private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
     }
 }
