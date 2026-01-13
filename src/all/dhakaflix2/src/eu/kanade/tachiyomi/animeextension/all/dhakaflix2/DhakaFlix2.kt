@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.SharedPreferences
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceScreen
+import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
@@ -100,6 +101,14 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             setDefaultValue("")
         }
         screen.addPreference(tmdbKeyPref)
+
+        val useTmdbPref = SwitchPreferenceCompat(screen.context).apply {
+            key = PREF_USE_TMDB_COVERS
+            title = "Use TMDb Covers"
+            summary = "Fetch high-quality covers from TMDb (Requires API Key)"
+            setDefaultValue(false)
+        }
+        screen.addPreference(useTmdbPref)
     }
 
     private fun fixUrl(url: String): String {
@@ -271,6 +280,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
         val animeList = mutableListOf<SAnime>()
+        val useTmdb = preferences.getBoolean(PREF_USE_TMDB_COVERS, false)
+        val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
 
         val cards = document.select("div.card")
         if (cards.isNotEmpty()) {
@@ -282,10 +293,19 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                     animeList.add(SAnime.create().apply {
                         this.title = title
                         this.url = fixUrl(url)
-                        val img = card.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
-                        this.thumbnail_url = (img?.attr("abs:data-src")?.takeIf { it.isNotEmpty() } 
-                            ?: img?.attr("abs:data-lazy-src")?.takeIf { it.isNotEmpty() }
-                            ?: img?.attr("abs:src") ?: "").replace(" ", "%20")
+                        
+                        var thumb = ""
+                        if (useTmdb && apiKey.isNotEmpty()) {
+                            thumb = fetchTmdbImage(title) ?: ""
+                        }
+                        
+                        if (thumb.isEmpty()) {
+                            val img = card.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
+                            thumb = (img?.attr("abs:data-src")?.takeIf { it.isNotEmpty() } 
+                                ?: img?.attr("abs:data-lazy-src")?.takeIf { it.isNotEmpty() }
+                                ?: img?.attr("abs:src") ?: "").replace(" ", "%20")
+                        }
+                        this.thumbnail_url = thumb
                     })
                 }
             }
@@ -295,10 +315,20 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 val url = element.attr("abs:href")
                 if (title.isNotEmpty() && isValidDirectoryItem(title, url)) {
                     animeList.add(SAnime.create().apply {
-                        this.title = if (title.endsWith("/")) title.dropLast(1) else title
+                        val cleanTitle = if (title.endsWith("/")) title.dropLast(1) else title
+                        this.title = cleanTitle
                         this.url = fixUrl(url)
-                        val finalUrl = if (url.endsWith("/")) url else "$url/"
-                        this.thumbnail_url = (finalUrl + "a_AL_.jpg").replace(" ", "%20").replace("&", "%26")
+                        
+                        var thumb = ""
+                        if (useTmdb && apiKey.isNotEmpty()) {
+                            thumb = fetchTmdbImage(cleanTitle) ?: ""
+                        }
+                        
+                        if (thumb.isEmpty()) {
+                            val finalUrl = if (url.endsWith("/")) url else "$url/"
+                            thumb = (finalUrl + "a_AL_.jpg").replace(" ", "%20").replace("&", "%26")
+                        }
+                        this.thumbnail_url = thumb
                     })
                 }
             }
@@ -343,12 +373,16 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override suspend fun getAnimeDetails(anime: SAnime): SAnime {
         val parsedAnime = super.getAnimeDetails(anime)
-        try {
-            val tmdbCover = fetchTmdbImage(anime.title)
-            if (tmdbCover != null) {
-                parsedAnime.thumbnail_url = tmdbCover
-            }
-        } catch (e: Exception) {}
+        val useTmdb = preferences.getBoolean(PREF_USE_TMDB_COVERS, false)
+        if (useTmdb) {
+            try {
+                val tmdbCover = fetchTmdbImage(anime.title)
+                if (tmdbCover != null) {
+                    parsedAnime.thumbnail_url = tmdbCover
+                    anime.thumbnail_url = tmdbCover
+                }
+            } catch (e: Exception) {}
+        }
         return parsedAnime
     }
 
@@ -580,6 +614,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
+        private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
         private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*")
         private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http", RegexOption.IGNORE_CASE)
         private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE)
