@@ -226,21 +226,26 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         }
 
         val body = jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-        // Short timeout for "fail-fast" behavior
+        // Ultra-short timeout for fast skipping of dead/slow servers
         val fastClient = client.newBuilder()
-            .readTimeout(15, TimeUnit.SECONDS)
-            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .connectTimeout(5, TimeUnit.SECONDS)
             .build()
 
-        val response = fastClient.newCall(POST(searchUrl, headers, body)).execute()
+        val response = try {
+            fastClient.newCall(POST(searchUrl, headers, body)).execute()
+        } catch (e: Exception) {
+            return emptyList()
+        }
+
         val bodyString = response.body?.string() ?: return emptyList()
         response.close()
 
-        // Handle Server 7's unique response format separately if needed, otherwise parse JSON
         if (baseUrl.contains("172.16.50.7")) {
             val results = mutableListOf<SAnime>()
             Server7Parser.parseServer7Response(bodyString, baseUrl, serverName, results, query)
-            return results
+            // Apply threshold filtering to Server 7 results too
+            return results.filter { diceCoefficient(it.title.lowercase(), query.lowercase()) > 0.25 }
         }
 
         val results = mutableListOf<SAnime>()
@@ -261,18 +266,20 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
                 if (title.isBlank() || isIgnored(title, query)) continue
 
+                // STRICT FILTERING: Discard low relevance results
+                if (diceCoefficient(title.lowercase(), query.lowercase()) < 0.25) continue
+
                 val anime = SAnime.create().apply {
                     this.title = title
                     val finalHref = if (href.startsWith("/")) href else "/$href"
                     this.url = "$baseUrl$finalHref"
-                    this.thumbnail_url = "" // Will be enriched later
+                    this.thumbnail_url = "" 
                 }
                 
-                // Prioritize folders
                 if (isFolder) results.add(0, anime) else results.add(anime)
             }
         } catch (e: Exception) {
-            // Ignore parse errors from garbage responses
+            // Ignore parse errors
         }
         return results
     }
@@ -439,7 +446,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             val name = titleElement.ownText().split("&nbsp;").first().trim()
             val url = titleElement.selectFirst("a")?.attr("abs:href") ?: ""
             val quality = element.selectFirst("h5 .badge-fill")?.text()?.let {
-                Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*", RegexOption.IGNORE_CASE).replace(it, "$1")
+                Regex("(\\\\d+\\\\.\\\\d+ [GM]B|\\\\d+ [GM]B).*", RegexOption.IGNORE_CASE).replace(it, "$1")
             } ?: ""
             val episodeName = element.selectFirst("h4")?.ownText()?.trim() ?: ""
             val size = element.selectFirst("h4 .badge-outline")?.text()?.trim() ?: ""
