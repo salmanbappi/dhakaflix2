@@ -61,8 +61,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     override val client: OkHttpClient = super.client.newBuilder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val original = chain.request()
             val requestUrl = original.url
@@ -86,8 +86,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         })
         .dispatcher(okhttp3.Dispatcher().apply {
-            maxRequests = 40
-            maxRequestsPerHost = 20
+            maxRequests = 60
+            maxRequestsPerHost = 30
         })
         .build()
 
@@ -449,7 +449,10 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
         if (apiKey.isBlank()) return null
 
-        val cleanTitle = title.replace(Regex("(?i)\\(\\d{4}\\)|\\[\\d{4}\\]|\\d{3,4}p|HDTC|HDRip|WEB-DL|BluRay|HC|HQ|x264|x265|HEVC|H\\.264|H\\.265"), "").trim()
+        // Improved cleaning: Remove franchise noise like "Doraemon The Movie-" to get specific matches
+        var cleanTitle = title.replace(Regex("(?i)Doraemon\\s+The\\s+Movie-", RegexOption.IGNORE_CASE), "")
+        cleanTitle = cleanTitle.replace(Regex("(?i)\\(\\d{4}\\)|\\[\\d{4}\\]|\\d{3,4}p|576p|480p|720p|1080p|HDTC|HDRip|WEB-DL|BluRay|HC|HQ|x264|x265|HEVC|H\\.264|H\\.265|\\(Hindi Dubbed\\)|Hindi Dubbed|Dual Audio"), "").trim()
+        
         val url = "https://api.themoviedb.org/3/search/multi".toHttpUrl().newBuilder()
             .addQueryParameter("api_key", apiKey)
             .addQueryParameter("query", cleanTitle)
@@ -460,7 +463,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             client.newCall(request).execute().use {
                 val body = it.body?.string() ?: return null
                 val json = JSONObject(body)
-                val results = json.getJSONArray("results")
+                val results = json.optJSONArray("results") ?: return null
                 if (results.length() > 0) {
                     val first = results.getJSONObject(0)
                     val posterPath = first.optString("poster_path")
@@ -629,9 +632,12 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             }
 
             if (fileEpisodes.isNotEmpty()) {
+                // If we found videos in this folder, we return them and STOP recursing deeper
+                // This is crucial for performance in large series
                 return fileEpisodes.sortedBy { it.name }.reversed()
             }
 
+            // ONLY if no videos were found, we look into subdirectories (Season folders, etc.)
             coroutineScope {
                 subDirs.map { dir ->
                     async(Dispatchers.IO) {
