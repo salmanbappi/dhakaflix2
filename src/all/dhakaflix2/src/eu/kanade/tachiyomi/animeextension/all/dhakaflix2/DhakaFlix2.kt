@@ -400,8 +400,11 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
         if (apiKey.isBlank()) return null
 
-        val cleanTitle = title.replace(Regex("\\(\\d{4}\\)"), "").trim()
-        val url = "https://api.themoviedb.org/3/search/multi?api_key=$apiKey&query=$cleanTitle".toHttpUrl()
+        val cleanTitle = title.replace(Regex("(?i)\\(\\d{4}\\)|\\[\\d{4}\\]|\\d{3,4}p|HDTC|HDRip|WEB-DL|BluRay|HC|HQ|x264|x265|HEVC|H\\.264|H\\.265"), "").trim()
+        val url = "https://api.themoviedb.org/3/search/multi".toHttpUrl().newBuilder()
+            .addQueryParameter("api_key", apiKey)
+            .addQueryParameter("query", cleanTitle)
+            .build()
         val request = Request.Builder().url(url).build()
         
         try {
