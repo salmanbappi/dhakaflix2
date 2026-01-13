@@ -245,7 +245,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             val results = mutableListOf<SAnime>()
             Server7Parser.parseServer7Response(bodyString, baseUrl, serverName, results, query)
             // Apply threshold filtering to Server 7 results too
-            return results.filter { diceCoefficient(it.title.lowercase(), query.lowercase()) > 0.25 }
+            return results.filter { diceCoefficient(it.title.lowercase(), query.lowercase()) > 0.15 }
         }
 
         val results = mutableListOf<SAnime>()
@@ -267,7 +267,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 if (title.isBlank() || isIgnored(title, query)) continue
 
                 // STRICT FILTERING: Discard low relevance results
-                if (diceCoefficient(title.lowercase(), query.lowercase()) < 0.25) continue
+                if (diceCoefficient(title.lowercase(), query.lowercase()) < 0.15) continue
 
                 val anime = SAnime.create().apply {
                     this.title = title
@@ -390,7 +390,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
         if (apiKey.isBlank()) return null
 
-        val cleanTitle = title.replace(Regex("(?i)Doraemon\\s+The\\s+Movie-?|\\(.*?\\)|\\[.*?\\]|\\\\d{3,4}p|576p|480p|720p|1080p|HDTC|HDRip|WEB-DL|BluRay|BRRip|Hindi Dubbed|Dual Audio|MSubs|ESub"), "").replace(Regex("[-_.]"), " ").trim()
+        // Aggressive cleaning for TMDb matching
+        val cleanTitle = title.replace(Regex("(?i)Doraemon\\s+The\\s+Movie-?|\\(.*?\\)|\\[.*?\\]|\\\\d{3,4}p|576p|480p|720p|1080p|HDTC|HDRip|WEB-DL|BluRay|BRRip|Hindi Dubbed|Dual Audio|MSubs|ESub|4k|UltraHD|10bit|HEVC|x264|x265"), "").replace(Regex("[-_.]"), " ").trim()
         val url = "https://api.themoviedb.org/3/search/multi?api_key=$apiKey&query=$cleanTitle".toHttpUrl()
         
         return try {
@@ -406,6 +407,40 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 } else null
             }
         } catch (e: Exception) { null }
+    }
+
+    // ... (rest of searchSingleServer remains similar but with lower threshold)
+
+    private fun searchSingleServer(baseUrl: String, serverName: String, path: String, query: String): List<SAnime> {
+        // ... (existing implementation) ...
+        
+        // Inside searchSingleServer:
+        // Change: if (diceCoefficient(title.lowercase(), query.lowercase()) < 0.15) continue
+        
+        // ...
+        return results // I will implement the full replacement below to ensure context
+    }
+
+    // ...
+
+    private fun sortEpisodes(list: List<EpisodeData>): List<SEpisode> {
+        return list.sortedWith(compareBy<EpisodeData> { 
+            parseEpisodeNumber(it.seasonEpisode) 
+        }.thenBy { it.seasonEpisode }).map {
+            SEpisode.create().apply {
+                url = it.videoUrl
+                name = if (it.seasonEpisode.isNotEmpty()) "${it.seasonEpisode} - ${it.episodeName}".trim() else it.episodeName
+                episode_number = parseEpisodeNumber(it.seasonEpisode)
+                scanlator = "${it.quality} ${it.size}".trim()
+            }
+        }.reversed()
+    }
+
+    private fun parseEpisodeNumber(text: String): Float {
+        return try {
+            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)
+            number?.toFloatOrNull() ?: Regex("(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+        } catch (e: Exception) { 0f }
     }
 
     override fun animeDetailsRequest(anime: SAnime): Request = GET(fixUrl(anime.url), headers)
@@ -509,13 +544,23 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     private fun sortEpisodes(list: List<EpisodeData>): List<SEpisode> {
-        var count = 0f
-        return list.map { SEpisode.create().apply {
-            url = it.videoUrl
-            name = "${it.seasonEpisode} - ${it.episodeName}".trim()
-            episode_number = ++count
-            scanlator = "${it.quality} ${it.size}"
-        }}.reversed()
+        return list.sortedWith(compareBy<EpisodeData> { 
+            parseEpisodeNumber(it.seasonEpisode) 
+        }.thenBy { it.seasonEpisode }).map {
+            SEpisode.create().apply {
+                url = it.videoUrl
+                name = if (it.seasonEpisode.isNotEmpty()) "${it.seasonEpisode} - ${it.episodeName}".trim() else it.episodeName
+                episode_number = parseEpisodeNumber(it.seasonEpisode)
+                scanlator = "${it.quality} ${it.size}".trim()
+            }
+        }.reversed()
+    }
+
+    private fun parseEpisodeNumber(text: String): Float {
+        return try {
+            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)
+            number?.toFloatOrNull() ?: Regex("(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+        } catch (e: Exception) { 0f }
     }
 
     override suspend fun getVideoList(episode: SEpisode): List<Video> {
