@@ -1,33 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.all.dhakaflix2
 
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import eu.kanade.tachiyomi.animesource.model.AnimesPage
-import eu.kanade.tachiyomi.animesource.model.SAnime
-import eu.kanade.tachiyomi.animesource.model.SEpisode
-import eu.kanade.tachiyomi.animesource.model.Video
-import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
-import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.POST
-import eu.kanade.tachiyomi.util.asJsoup
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.Cookie
-import okhttp3.Headers
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
-import org.jsoup.nodes.Document
 import android.app.Application
 import android.content.SharedPreferences
 import androidx.preference.EditTextPreference
@@ -126,16 +98,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             title = "TMDb API Key"
             summary = "Used for high-quality covers. Get one at themoviedb.org"
             setDefaultValue("")
-            
-            setOnPreferenceChangeListener { _, newValue ->
-                val newKey = newValue as String
-                try {
-                    preferences.edit().putString(PREF_TMDB_API_KEY, newKey).commit()
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-                true
-            }
         }
         screen.addPreference(tmdbKeyPref)
     }
@@ -144,7 +106,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         if (url.isBlank()) return url
         var u = url.trim()
         
-        // Handle baseUrl + absoluteUrl concatenation
         val lastHttp = u.lastIndexOf("http://", ignoreCase = true)
         val lastHttps = u.lastIndexOf("https://", ignoreCase = true)
         val lastProtocol = if (lastHttp > lastHttps) lastHttp else lastHttps
@@ -172,7 +133,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                         "http://172.16.50.7" to "DHAKA-FLIX-7"
                     )
 
-                    // Search Probing: Try multiple variations to catch more results
                     val queries = listOf(query, "$query movie").distinct()
 
                     val results = servers.flatMap { server ->
@@ -232,8 +192,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            // Simpler regex like Server 7 (catch all, filter later if needed)
-            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":(null|\\\\d+)", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":(null|\\\\d+)", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
@@ -384,15 +343,12 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override suspend fun getAnimeDetails(anime: SAnime): SAnime {
         val parsedAnime = super.getAnimeDetails(anime)
-        // Try to fetch TMDb cover
         try {
             val tmdbCover = fetchTmdbImage(anime.title)
             if (tmdbCover != null) {
                 parsedAnime.thumbnail_url = tmdbCover
             }
-        } catch (e: Exception) {
-            // Ignore errors, keep original cover
-        }
+        } catch (e: Exception) {}
         return parsedAnime
     }
 
@@ -405,8 +361,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val request = Request.Builder().url(url).build()
         
         try {
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: return null
+            client.newCall(request).execute().use {
+                val body = it.body?.string() ?: return null
                 val json = JSONObject(body)
                 val results = json.getJSONArray("results")
                 if (results.length() > 0) {
@@ -417,9 +373,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
             }
-        } catch (e: Exception) {
-            return null
-        }
+        } catch (e: Exception) {}
         return null
     }
 
@@ -439,7 +393,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 val img = document.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
                 var thumb = img?.attr("abs:src") ?: ""
                 if (thumb.isEmpty()) {
-                    thumb = document.selectFirst("a[href~=(?i)\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
+                    thumb = document.selectFirst("a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
                 }
                 thumbnail_url = thumb.replace(" ", "%20")
             }
@@ -474,7 +428,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
         return withContext(Dispatchers.IO) {
-            withTimeoutOrNull(30000) { // 30s timeout for episode loading
+            withTimeoutOrNull(30000) {
                 val response = client.newCall(GET(fixUrl(anime.url), headers)).execute()
                 val document = response.asJsoup()
                 val mediaType = getMediaType(document)
@@ -514,7 +468,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     private fun getMovieMedia(document: Document): List<SEpisode> {
         val linkElement = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], a[href*=/s/lazyload/], .download-link a").lastOrNull()
         val url = linkElement?.attr("abs:href")?.let { it.replace(" ", "%20") } ?: ""
-        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
+        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "").trim() ?: ""
         
         return listOf(SEpisode.create().apply {
             this.url = url
@@ -561,7 +515,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 val absHttpUrl = currentHttpUrl.resolve(href) ?: return@forEach
                 val absUrl = absHttpUrl.toString()
 
-                // Strict Child-Only Check: Only follow links that are children of the current folder
                 if (!absUrl.startsWith(normalizedBaseUrl)) return@forEach
 
                 if (isVideoFile(href)) {
@@ -575,13 +528,10 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
             }
 
-            // Early Exit: If videos found, don't recurse deeper into this folder's subdirectories
             if (fileEpisodes.isNotEmpty()) {
                 return fileEpisodes.sortedBy { it.name }.reversed()
             }
 
-
-            // Recurse into subdirectories
             coroutineScope {
                 subDirs.map { dir ->
                     async(Dispatchers.IO) {
@@ -595,7 +545,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             emptyList()
         }
     }
-
 
     private fun isVideoFile(href: String): Boolean {
         val h = href.lowercase()
@@ -631,200 +580,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
-        private val LINK_REGEX = Pattern.compile("<a [^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", Pattern.CASE_INSENSITIVE)
-        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*")
-        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http", RegexOption.IGNORE_CASE)
-        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE)
-        private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
-    }
-}
-
-
-    private fun getMediaType(document: Document): String? {
-        val html = document.select("script").html()
-        return when {
-            html.contains("/m/lazyload/") -> "m"
-            html.contains("/s/lazyload/") -> "s"
-            html.contains("/s/view/") -> "s"
-            else -> null
-        }
-    }
-
-    private fun getMovieDetails(document: Document) = SAnime.create().apply {
-        status = SAnime.COMPLETED
-        thumbnail_url = document.selectFirst("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
-            ?.attr("abs:src")?.replace(" ", "%20") ?: ""
-        genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
-        description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
-    }
-
-    private fun getSeriesDetails(document: Document) = SAnime.create().apply {
-        status = SAnime.ONGOING
-        thumbnail_url = document.selectFirst("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
-            ?.attr("abs:src")?.replace(" ", "%20") ?: ""
-        genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
-        description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
-    }
-
-    override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
-        return withContext(Dispatchers.IO) {
-            withTimeoutOrNull(30000) { // 30s timeout for episode loading
-                val response = client.newCall(GET(fixUrl(anime.url), headers)).execute()
-                val document = response.asJsoup()
-                val mediaType = getMediaType(document)
-
-                val episodes = when (mediaType) {
-                    "s" -> {
-                        val extracted = extractEpisodes(document)
-                        if (extracted.isNotEmpty()) sortEpisodes(extracted) else parseDirectoryParallel(document)
-                    }
-                    "m" -> getMovieMedia(document)
-                    else -> parseDirectoryParallel(document)
-                }
-
-                if (episodes.isEmpty()) throw Exception("No results found")
-                episodes
-            } ?: emptyList()
-        }
-    }
-
-    private fun extractEpisodes(document: Document): List<EpisodeData> {
-        return document.select("div.card, div.episode-item, div.download-link").mapNotNull { element ->
-            val titleElement = element.selectFirst("h5") ?: return@mapNotNull null
-            val rawTitle = titleElement.ownText().trim()
-            val name = rawTitle.split("&nbsp;").first().trim()
-            val url = element.selectFirst("h5 a")?.attr("abs:href")?.trim() ?: ""
-            val qualityText = element.selectFirst("h5 .badge-fill")?.text() ?: ""
-            val quality = sizeRegex.replace(qualityText, "$1").trim()
-            val epName = element.selectFirst("h4")?.ownText()?.trim() ?: ""
-            val size = element.selectFirst("h4 .badge-outline")?.text()?.trim() ?: ""
-            
-            if (name.isNotEmpty() && url.isNotEmpty()) {
-                EpisodeData(name, url, quality, epName, size)
-            } else null
-        }
-    }
-
-    private fun getMovieMedia(document: Document): List<SEpisode> {
-        val linkElement = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], a[href*=/s/lazyload/], .download-link a").lastOrNull()
-        val url = linkElement?.attr("abs:href")?.let { it.replace(" ", "%20") } ?: ""
-        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
-        
-        return listOf(SEpisode.create().apply {
-            this.url = url
-            this.name = "Movie"
-            this.episode_number = 1f
-            this.scanlator = quality
-        })
-    }
-
-    private val semaphore = Semaphore(10)
-
-    private suspend fun parseDirectoryParallel(document: Document): List<SEpisode> {
-        return parseDirectory(document.location(), 3, document)
-    }
-
-    private suspend fun parseDirectory(url: String, depth: Int = 3, initialDocument: Document? = null): List<SEpisode> {
-        if (depth < 0) return emptyList()
-
-        return try {
-            val document: Document
-            val currentHttpUrl: HttpUrl
-
-            if (initialDocument != null) {
-                document = initialDocument
-                currentHttpUrl = document.location().toHttpUrl()
-            } else {
-                val response = client.newCall(GET(url, headers)).execute()
-                document = response.asJsoup()
-                currentHttpUrl = response.request.url
-            }
-
-            val normalizedBaseUrl = if (url.endsWith("/")) url else "$url/"
-
-            val fileEpisodes = mutableListOf<SEpisode>()
-            val subDirs = mutableListOf<String>()
-
-            document.select("a").forEach { element ->
-                val href = element.attr("href")
-                val text = element.text().trim()
-
-                if (href.contains("..") || href.startsWith("?") || href.contains("_h5ai") || 
-                    href.contains("?C=") || href.contains("?O=") || isIgnored(text)) return@forEach
-
-                val absHttpUrl = currentHttpUrl.resolve(href) ?: return@forEach
-                val absUrl = absHttpUrl.toString()
-
-                // Strict Child-Only Check: Only follow links that are children of the current folder
-                if (!absUrl.startsWith(normalizedBaseUrl)) return@forEach
-
-                if (isVideoFile(href)) {
-                    fileEpisodes.add(SEpisode.create().apply {
-                        this.url = absUrl
-                        this.name = try { URLDecoder.decode(text, "UTF-8") } catch(e:Exception) { text }
-                        this.episode_number = -1f
-                    })
-                } else if (href.endsWith("/") || absUrl.endsWith("/")) {
-                     subDirs.add(absUrl)
-                }
-            }
-
-            // Early Exit: If videos found, don't recurse deeper into this folder's subdirectories
-            if (fileEpisodes.isNotEmpty()) {
-                return fileEpisodes.sortedBy { it.name }.reversed()
-            }
-
-
-            // Recurse into subdirectories
-            coroutineScope {
-                subDirs.map { dir ->
-                    async(Dispatchers.IO) {
-                        semaphore.withPermit {
-                            parseDirectory(dir, depth - 1)
-                        }
-                    }
-                }.awaitAll().flatten()
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-
-    private fun isVideoFile(href: String): Boolean {
-        val h = href.lowercase()
-        return listOf(".mkv", ".mp4", ".avi", ".ts", ".m4v", ".webm", ".mov").any { h.endsWith(it) || h.contains("$it?") }
-    }
-
-    private fun sortEpisodes(list: List<EpisodeData>): List<SEpisode> {
-        var episodeCount = 0f
-        return list.map {
-            SEpisode.create().apply {
-                url = it.videoUrl
-                name = "${it.seasonEpisode} - ${it.episodeName}".trim()
-                episode_number = ++episodeCount
-                scanlator = "${it.quality}  ${it.size}"
-            }
-        }.reversed()
-    }
-
-    override suspend fun getVideoList(episode: SEpisode): List<Video> {
-        return listOf(Video(episode.url, "Video", episode.url))
-    }
-
-    override fun episodeListParse(response: Response): List<SEpisode> = throw Exception("Not used")
-    override fun videoListParse(response: Response): List<Video> = throw Exception("Not used")
-
-    data class EpisodeData(
-        val seasonEpisode: String,
-        val videoUrl: String,
-        val quality: String,
-        val episodeName: String,
-        val size: String
-    )
-
-    companion object {
-        private val LINK_REGEX = Pattern.compile("<a [^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", Pattern.CASE_INSENSITIVE)
         private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*")
         private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http", RegexOption.IGNORE_CASE)
         private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE)
