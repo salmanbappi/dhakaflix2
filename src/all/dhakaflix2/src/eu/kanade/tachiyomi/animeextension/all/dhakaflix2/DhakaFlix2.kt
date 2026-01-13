@@ -161,13 +161,11 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         if (query.isEmpty()) return super.getSearchAnime(page, query, filters)
 
-        // Cache check
         val now = System.currentTimeMillis()
         if (searchCache.containsKey(query) && now - (cacheTime[query] ?: 0) < 1800000) {
             return AnimesPage(searchCache[query]!!, false)
         }
 
-        // Parallel Search across all known BDIX servers
         val results = withContext(Dispatchers.IO) {
             val servers = listOf(
                 "http://172.16.50.14" to "DHAKA-FLIX-14",
@@ -176,10 +174,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 "http://172.16.50.7" to "DHAKA-FLIX-7"
             )
 
-            // Probe common heavy paths concurrently for maximum speed
             val deferredResults = servers.flatMap { (baseUrl, serverName) ->
                 val paths = mutableListOf("/$serverName/")
-                // Targeted deep search for popular categories to bypass root lag
                 if (serverName == "DHAKA-FLIX-9") {
                     paths.add("/$serverName/Anime & Cartoon TV Series/")
                     paths.add("/$serverName/Anime & Cartoon Movies/")
@@ -200,12 +196,10 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
             }
             
-            // Combine and sort
             val allAnime = deferredResults.awaitAll().flatten().distinctBy { it.url }
             sortByTitle(allAnime, query)
         }
 
-        // Cache results
         if (results.isNotEmpty()) {
             searchCache[query] = results
             cacheTime[query] = now
@@ -226,7 +220,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         }
 
         val body = jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-        // Ultra-short timeout for fast skipping of dead/slow servers
         val fastClient = client.newBuilder()
             .readTimeout(10, TimeUnit.SECONDS)
             .connectTimeout(5, TimeUnit.SECONDS)
@@ -244,7 +237,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         if (baseUrl.contains("172.16.50.7")) {
             val results = mutableListOf<SAnime>()
             Server7Parser.parseServer7Response(bodyString, baseUrl, serverName, results, query)
-            // Apply threshold filtering to Server 7 results too
             return results.filter { diceCoefficient(it.title.lowercase(), query.lowercase()) > 0.15 }
         }
 
@@ -266,7 +258,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
                 if (title.isBlank() || isIgnored(title, query)) continue
 
-                // STRICT FILTERING: Discard low relevance results
                 if (diceCoefficient(title.lowercase(), query.lowercase()) < 0.15) continue
 
                 val anime = SAnime.create().apply {
@@ -279,12 +270,11 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 if (isFolder) results.add(0, anime) else results.add(anime)
             }
         } catch (e: Exception) {
-            // Ignore parse errors
         }
         return results
     }
 
-    private fun isIgnored(text: String, query: String = ""): Boolean {
+    private fun isIgnored(text: String, query: String = ""):
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai", "Subtitle", "Extras", "Sample", "Trailer")
         if (ignored.any { text.contains(it, ignoreCase = true) }) return true
         val uploaderTags = listOf("-LOKI", "-LOKiHD", "-TDoc", "-Tuna", "-PSA", "-Pahe", "-QxR", "-YIFY", "-RARBG")
@@ -299,7 +289,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         return list.sortedByDescending { diceCoefficient(it.title.lowercase(), query.lowercase()) }
     }
 
-    // Sorensen-Dice coefficient for better string similarity matching
     private fun diceCoefficient(s1: String, s2: String): Double {
         val n1 = s1.length
         val n2 = s2.length
@@ -315,10 +304,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         }
         
         return (2.0 * intersection) / (n1 + n2 - 2)
-    }
-
-    private fun searchOnServer(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, path: String) {
-        // Deprecated, replaced by searchSingleServer
     }
 
     override fun popularAnimeRequest(page: Int): Request = GET("http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/%282025%29/", headers)
@@ -390,8 +375,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
         if (apiKey.isBlank()) return null
 
-        // Aggressive cleaning for TMDb matching
-        val cleanTitle = title.replace(Regex("(?i)Doraemon\\s+The\\s+Movie-?|\\(.*?\\)|\\[.*?\\]|\\\\d{3,4}p|576p|480p|720p|1080p|HDTC|HDRip|WEB-DL|BluRay|BRRip|Hindi Dubbed|Dual Audio|MSubs|ESub|4k|UltraHD|10bit|HEVC|x264|x265"), "").replace(Regex("[-_.]"), " ").trim()
+        val cleanTitle = title.replace(Regex("(?i)Doraemon\s+The\s+Movie-?|\(.*?\)|\[.*?\]|\\d{3,4}p|576p|480p|720p|1080p|HDTC|HDRip|WEB-DL|BluRay|BRRip|Hindi Dubbed|Dual Audio|MSubs|ESub|4k|UltraHD|10bit|HEVC|x264|x265"), "").replace(Regex("[-_.]"), " ").trim()
         val url = "https://api.themoviedb.org/3/search/multi?api_key=$apiKey&query=$cleanTitle".toHttpUrl()
         
         return try {
@@ -407,40 +391,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 } else null
             }
         } catch (e: Exception) { null }
-    }
-
-    // ... (rest of searchSingleServer remains similar but with lower threshold)
-
-    private fun searchSingleServer(baseUrl: String, serverName: String, path: String, query: String): List<SAnime> {
-        // ... (existing implementation) ...
-        
-        // Inside searchSingleServer:
-        // Change: if (diceCoefficient(title.lowercase(), query.lowercase()) < 0.15) continue
-        
-        // ...
-        return results // I will implement the full replacement below to ensure context
-    }
-
-    // ...
-
-    private fun sortEpisodes(list: List<EpisodeData>): List<SEpisode> {
-        return list.sortedWith(compareBy<EpisodeData> { 
-            parseEpisodeNumber(it.seasonEpisode) 
-        }.thenBy { it.seasonEpisode }).map {
-            SEpisode.create().apply {
-                url = it.videoUrl
-                name = if (it.seasonEpisode.isNotEmpty()) "${it.seasonEpisode} - ${it.episodeName}".trim() else it.episodeName
-                episode_number = parseEpisodeNumber(it.seasonEpisode)
-                scanlator = "${it.quality} ${it.size}".trim()
-            }
-        }.reversed()
-    }
-
-    private fun parseEpisodeNumber(text: String): Float {
-        return try {
-            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)
-            number?.toFloatOrNull() ?: Regex("(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
-        } catch (e: Exception) { 0f }
     }
 
     override fun animeDetailsRequest(anime: SAnime): Request = GET(fixUrl(anime.url), headers)
@@ -481,7 +431,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             val name = titleElement.ownText().split("&nbsp;").first().trim()
             val url = titleElement.selectFirst("a")?.attr("abs:href") ?: ""
             val quality = element.selectFirst("h5 .badge-fill")?.text()?.let {
-                Regex("(\\\\d+\\\\.\\\\d+ [GM]B|\\\\d+ [GM]B).*", RegexOption.IGNORE_CASE).replace(it, "$1")
+                Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*", RegexOption.IGNORE_CASE).replace(it, "$1")
             } ?: ""
             val episodeName = element.selectFirst("h4")?.ownText()?.trim() ?: ""
             val size = element.selectFirst("h4 .badge-outline")?.text()?.trim() ?: ""
@@ -558,8 +508,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private fun parseEpisodeNumber(text: String): Float {
         return try {
-            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)
-            number?.toFloatOrNull() ?: Regex("(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\.?\s*(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)
+            number?.toFloatOrNull() ?: Regex("(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
         } catch (e: Exception) { 0f }
     }
 
@@ -582,7 +532,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
         private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val IP_HTTP_REGEX = Regex("(\\\\d{1,3}\\.\\\\d{1,3}\\.\\\\d{1,3}\\.\\\\d{1,3})\\s*http")
+        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http")
         private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
         private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
     }
