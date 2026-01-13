@@ -260,7 +260,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             for (i in 0 until searchArr.length()) {
                 val item = searchArr.getJSONObject(i)
                 val href = item.getString("href").replace('\\', '/')
-                val size = item.opt("size")
                 
                 var cleanHrefForTitle = href
                 while (cleanHrefForTitle.endsWith("/")) cleanHrefForTitle = cleanHrefForTitle.dropLast(1)
@@ -396,12 +395,12 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     private fun cleanTitleForTmdb(title: String): String {
         var t = title.replace(Regex("\\.(mkv|mp4|avi|flv)$"), RegexOption.IGNORE_CASE), "")
         t = t.replace(Regex("[._]"), " ")
-        t = t.replace(Regex("(?i)\\s+S\\d+E\\d+.*"), "")
-        t = t.replace(Regex("(?i)\\s+S\\d+.*"), "")
-        t = t.replace(Regex("(?i)\\s+(?:Episode|Ep)\\s*\\d+.*"), "")
+        t = t.replace(Regex("(?i)\\s+S\\d+E\\d+.*", RegexOption.IGNORE_CASE), "")
+        t = t.replace(Regex("(?i)\\s+S\\d+.*", RegexOption.IGNORE_CASE), "")
+        t = t.replace(Regex("(?i)\\s+(?:Episode|Ep)\\s*\\d+.*", RegexOption.IGNORE_CASE), "")
         t = t.replace(Regex("\\s+[\\[\\(]?\\d{4}[\\]\\)]?.*", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("(?i)\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*"), "")
-        t = t.replace(Regex("\\s+-\\s+\\d+\\s+.*"), "")
+        t = t.replace(Regex("(?i)\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*", RegexOption.IGNORE_CASE), "")
+        t = t.replace(Regex("\\s+-\\s+\\d+\\s+.*", RegexOption.IGNORE_CASE), "")
         return t.trim()
     }
 
@@ -509,8 +508,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private fun parseEpisodeNumber(text: String): Float {
         return try {
-            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)
-            number?.toFloatOrNull() ?: Regex("(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\\\.?\\\\s*(\\\\d+(\\\\.{\\\\d+)?)").find(text)?.groupValues?.get(1)
+            number?.toFloatOrNull() ?: Regex("(\\\\d+(\\\\.{\\\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
         } catch (e: Exception) { 0f }
     }
 
