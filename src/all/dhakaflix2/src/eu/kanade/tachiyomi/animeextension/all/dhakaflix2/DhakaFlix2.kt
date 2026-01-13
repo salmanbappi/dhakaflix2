@@ -215,12 +215,12 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
 
-                val allResults = searchTasks.distinct().map {
+                val allResults = searchTasks.distinct().map { task ->
                     async(Dispatchers.IO) {
                         val serverResults = mutableListOf<SAnime>()
                         try {
-                            val timeout = if (it.second.contains("9")) 15000L else 25000L
-                            searchOnServer(it.first, it.second, query, serverResults, timeout, it.third)
+                            val timeout = if (task.second.contains("9")) 15000L else 25000L
+                            searchOnServer(task.first, task.second, query, serverResults, timeout, task.third)
                         } catch (e: Exception) {}
                         serverResults
                     }
@@ -263,11 +263,12 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             }
 
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
-            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":(null|\d+)", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":(null|\\d+)", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
-                var href = matcher.group(1).replace('\', '/').trim()
+                val hrefMatch = matcher.group(1) ?: continue
+                var href = hrefMatch.replace('\\', '/').trim()
                 href = href.replace(Regex("/{2,}"), "/")
                 
                 var cleanHrefForTitle = href
@@ -284,7 +285,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 
                 if (title.isEmpty() || isIgnored(title, query)) continue
                 
-                val isFolderItem = matcher.group(2) == "null" || matcher.group(2) == null
+                val sizeMatch = matcher.group(2)
+                val isFolderItem = sizeMatch == "null" || sizeMatch == null
                 if (!isFolderItem && results.any { it.url.contains(cleanHrefForTitle) }) continue
                 
                 val anime = SAnime.create().apply {
@@ -296,7 +298,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 
                 synchronized(results) {
                     if (results.none { it.url == anime.url }) {
-                        if (href.endsWith("/") || isFolderItem) results.add(0, anime) else results.add(anime)
+                        if (isFolderItem) results.add(0, anime) else results.add(anime)
                     }
                 }
             }
@@ -674,9 +676,9 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
         private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*")
-        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http")
-        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
+        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*", RegexOption.IGNORE_CASE)
+        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http", RegexOption.IGNORE_CASE)
+        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE)
         private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
     }
 }
