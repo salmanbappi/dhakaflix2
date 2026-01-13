@@ -375,7 +375,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
         if (apiKey.isBlank()) return null
 
-        val cleanTitle = title.replace(Regex("(?i)Doraemon\s+The\s+Movie-?|\(.*?\)|\[.*?\]|\\d{3,4}p|576p|480p|720p|1080p|HDTC|HDRip|WEB-DL|BluRay|BRRip|Hindi Dubbed|Dual Audio|MSubs|ESub|4k|UltraHD|10bit|HEVC|x264|x265"), "").replace(Regex("[-_.]"), " ").trim()
+        val cleanTitle = title.replace(Regex("(?i)Doraemon\\s+The\\s+Movie-?|\\(.*?\\)|\[.*?\\]|\\\\d{3,4}p|576p|480p|720p|1080p|HDTC|HDRip|WEB-DL|BluRay|BRRip|Hindi Dubbed|Dual Audio|MSubs|ESub|4k|UltraHD|10bit|HEVC|x264|x265"), "").replace(Regex("[-_.]"), " ").trim()
         val url = "https://api.themoviedb.org/3/search/multi?api_key=$apiKey&query=$cleanTitle".toHttpUrl()
         
         return try {
@@ -508,7 +508,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private fun parseEpisodeNumber(text: String): Float {
         return try {
-            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\.?\s*(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)
+            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)
             number?.toFloatOrNull() ?: Regex("(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
         } catch (e: Exception) { 0f }
     }
@@ -532,7 +532,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
         private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http")
+        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\\\.\\d{1,3}\\\\.\\d{1,3}\\\\.\\d{1,3})\\s*http")
         private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
         private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
     }
