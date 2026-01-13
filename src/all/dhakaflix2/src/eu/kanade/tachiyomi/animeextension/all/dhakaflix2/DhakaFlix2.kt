@@ -192,7 +192,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":(null|\\\\d+)", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\\\"href\\\":\\\"([^\\\"]+)\\\"[^}]*\\\"size\\\":(null|\\\\d+)", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
@@ -393,7 +393,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 val img = document.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
                 var thumb = img?.attr("abs:src") ?: ""
                 if (thumb.isEmpty()) {
-                    thumb = document.selectFirst("a[href~=(?i)\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
+                    thumb = document.selectFirst("a[href~=(?i)\\\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
                 }
                 thumbnail_url = thumb.replace(" ", "%20")
             }
@@ -493,7 +493,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
             if (initialDocument != null) {
                 document = initialDocument
-                currentHttpUrl = document.location().toHttpUrlOrNull() ?: return emptyList()
+                currentHttpUrl = document.location()?.toHttpUrlOrNull() ?: return emptyList()
             } else {
                 val response = client.newCall(GET(url, headers)).execute()
                 document = response.asJsoup()
