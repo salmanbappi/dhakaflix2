@@ -393,16 +393,15 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         } catch (e: Exception) { null }
     }
 
-    private fun cleanTitleForTmdb(title: String):
- String {
-        var t = title.replace(Regex("\\.(mkv|mp4|avi|flv)$"), RegexOption.IGNORE_CASE), "")
+    private fun cleanTitleForTmdb(title: String): String {
+        var t = title.replace(Regex("\\\\.(mkv|mp4|avi|flv)$", RegexOption.IGNORE_CASE), "")
         t = t.replace(Regex("[._]"), " ")
-        t = t.replace(Regex("(?i)\\s+S\\d+E\\d+.*", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("(?i)\\s+S\\d+.*", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("(?i)\\s+(?:Episode|Ep)\\s*\\d+.*", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("\\s+[\\[\\(]?\\d{4}[\\]\\)]?.*", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("(?i)\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("\\s+-\\s+\\d+\\s+.*", RegexOption.IGNORE_CASE), "")
+        t = t.replace(Regex("\\\\s+S\\\\d+E\\\\d+.*", RegexOption.IGNORE_CASE), "")
+        t = t.replace(Regex("\\\\s+S\\\\d+.*", RegexOption.IGNORE_CASE), "")
+        t = t.replace(Regex("\\\\s+(?:Episode|Ep)\\\\s*\\\\d+.*", RegexOption.IGNORE_CASE), "")
+        t = t.replace(Regex("\\\\s+[\\\\[\\\\(]?\\\\d{4}[\\\\]\\\\)]?.*", RegexOption.IGNORE_CASE), "")
+        t = t.replace(Regex("\\\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*", RegexOption.IGNORE_CASE), "")
+        t = t.replace(Regex("\\\\s+-\\\\s+\\\\d+\\\\s+.*", RegexOption.IGNORE_CASE), "")
         return t.trim()
     }
 
@@ -529,7 +528,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
         private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\\\.{\\d{1,3}}\\\\.{\\d{1,3}}\\\\.{\\d{1,3}})\\\\s*http")
+        private val IP_HTTP_REGEX = Regex("(\\\\d{1,3}\\\\.\\\\d{1,3}\\\\.\\\\d{1,3}\\\\.\\\\d{1,3})\\\\s*http")
         private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
         private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
     }
