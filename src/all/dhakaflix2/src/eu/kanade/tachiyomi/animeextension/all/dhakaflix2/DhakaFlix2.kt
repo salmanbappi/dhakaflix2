@@ -66,8 +66,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     override val client: OkHttpClient = super.client.newBuilder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
-        .connectionPool(okhttp3.ConnectionPool(15, 5, TimeUnit.MINUTES))
-        .addInterceptor { chain ->
+        .connectionPool(okhttp3.ConnectionPool(20, 5, TimeUnit.MINUTES))
+        .addInterceptor {
             val original = chain.request()
             val requestUrl = original.url
             val referer = "${requestUrl.scheme}://${requestUrl.host}/"
@@ -91,8 +91,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         })
         .dispatcher(okhttp3.Dispatcher().apply {
-            maxRequests = 40
-            maxRequestsPerHost = 10
+            maxRequests = 60
+            maxRequestsPerHost = 15
         })
         .build()
 
@@ -111,7 +111,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val useTmdbPref = SwitchPreferenceCompat(screen.context).apply {
             key = PREF_USE_TMDB_COVERS
             title = "Use TMDb Covers"
-            summary = "Fetch high-quality covers from TMDb (Requires API Key). Note: Loads asynchronously to maintain speed."
+            summary = "Fetch high-quality covers from TMDb (Requires API Key). Note: If disabled, no images will load."
             setDefaultValue(false)
         }
         screen.addPreference(useTmdbPref)
@@ -121,8 +121,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             title = "Clear TMDb Cache"
             summary = "Clears all cached TMDb poster URLs"
             setDefaultValue(false)
-            setOnPreferenceChangeListener {
-                _, newValue ->
+            setOnPreferenceChangeListener { _, newValue ->
                 if (newValue as Boolean) {
                     val editor = preferences.edit()
                     preferences.all.keys.filter { it.startsWith("tmdb_cover_") }.forEach {
@@ -158,7 +157,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         return u.replace(" ", "%20").replace("&", "%26")
     }
 
-    private val enrichmentSemaphore = Semaphore(3)
+    private val enrichmentSemaphore = Semaphore(5)
 
     private suspend fun enrichAnimes(animes: List<SAnime>) {
         val useTmdb = preferences.getBoolean(PREF_USE_TMDB_COVERS, false)
@@ -167,9 +166,9 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
         if (apiKey.isBlank()) return
 
-        withTimeoutOrNull(5000) {
+        withTimeoutOrNull(10000) {
             coroutineScope {
-                animes.take(12).map { anime ->
+                animes.take(40).map { anime -> 
                     async {
                         enrichmentSemaphore.withPermit {
                             val tmdbCover = fetchTmdbImage(anime.title)
@@ -197,7 +196,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         if (query.isEmpty()) return super.getSearchAnime(page, query, filters)
 
         val now = System.currentTimeMillis()
-        if (searchCache.containsKey(query) && now - (cacheTime[query] ?: 0) < 600000) {
+        // Cache search results for 20 minutes to improve navigation speed
+        if (searchCache.containsKey(query) && now - (cacheTime[query] ?: 0) < 1200000) {
             return AnimesPage(searchCache[query]!!, false)
         }
 
@@ -211,16 +211,19 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                     "http://172.16.50.7" to "DHAKA-FLIX-7"
                 ).forEach { (baseUrl, serverName) ->
                     searchTasks.add(Triple(baseUrl, serverName, "/$serverName/"))
+                    // Target slow Server 9 specifically if looking for Anime
                     if (serverName == "DHAKA-FLIX-9" && (query.contains("Doraemon", true) || query.contains("Anime", true))) {
                          searchTasks.add(Triple(baseUrl, serverName, "/$serverName/Anime & Cartoon TV Series/"))
                     }
                 }
 
-                val allResults = searchTasks.distinct().map { task ->
+                val allResults = searchTasks.distinct().map {
                     async(Dispatchers.IO) {
                         val serverResults = mutableListOf<SAnime>()
                         try {
-                            searchOnServer(task.first, task.second, query, serverResults, 25000L, task.third)
+                            // Lower timeout for slow Server 9 to avoid overall lag
+                            val timeout = if (task.second.contains("9")) 15000L else 25000L
+                            searchOnServer(task.first, task.second, query, serverResults, timeout, task.third)
                         } catch (e: Exception) {}
                         serverResults
                     }
@@ -250,8 +253,10 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val jsonPayload = "{\"action\":\"get\",\"search\":{\"href\":\"$path\",\"pattern\":\"$query\",\"ignorecase\":true}}"
         val body = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
         
+        val searchClient = client.newBuilder().readTimeout(timeout, TimeUnit.MILLISECONDS).build()
         val request = POST(searchUrl, headers, body)
-        client.newCall(request).execute().use { response ->
+        
+        searchClient.newCall(request).execute().use {
             if (!response.isSuccessful) return
             val bodyString = response.body?.string() ?: return
             
@@ -261,16 +266,12 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             }
 
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
-            
-            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":(null|\\d+)", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":(null|\\d+)", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
                 var href = matcher.group(1).replace('\\', '/').trim()
                 href = href.replace(Regex("/{2,}"), "/")
-                
-                val size = matcher.group(2)
-                val isFolder = size == "null"
                 
                 var cleanHrefForTitle = href
                 while (cleanHrefForTitle.endsWith("/")) {
@@ -285,34 +286,27 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
                 
                 if (title.isEmpty() || isIgnored(title, query)) continue
-                
-                if (!isFolder && results.any { it.url.contains(cleanHrefForTitle) }) continue
+                if (!isFolder(matcher.group(2)) && results.any { it.url.contains(cleanHrefForTitle) }) continue
                 
                 val anime = SAnime.create().apply {
                     this.title = title
-                    val finalHref = if (href.endsWith("/") || isFolder) (if (href.endsWith("/")) href else "$href/") else href
+                    val isFolderItem = isFolder(matcher.group(2))
+                    val finalHref = if (href.endsWith("/") || isFolderItem) (if (href.endsWith("/")) href else "$href/") else href
                     this.url = "$hostUrl$finalHref"
-                    this.thumbnail_url = getThumbnail(this.url, serverName)
+                    // Zero image loading by default. Only set if TMDb enrichs it later.
+                    this.thumbnail_url = ""
                 }
                 
                 synchronized(results) {
                     if (results.none { it.url == anime.url }) {
-                        if (isFolder) results.add(0, anime) else results.add(anime)
+                        if (href.endsWith("/") || isFolder(matcher.group(2))) results.add(0, anime) else results.add(anime)
                     }
                 }
             }
         }
     }
 
-    private fun getThumbnail(url: String, serverName: String): String {
-        val base = if (url.endsWith("/")) url else "$url/"
-        val thumbName = when {
-            serverName.contains("9") -> "aay.jpg" 
-            serverName.contains("12") || serverName.contains("14") -> "a_AL_.jpg"
-            else -> "a11.jpg"
-        }
-        return fixUrl(base + thumbName)
-    }
+    private fun isFolder(size: String?): Boolean = size == null || size == "null"
 
     private fun isIgnored(text: String, query: String = ""): Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai", "Subtitle", "Extras", "Sample", "Trailer")
@@ -364,7 +358,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val document = response.asJsoup()
         val cards = document.select("div.card")
         val animeList = if (cards.isNotEmpty()) {
-            cards.mapNotNull { card ->
+            cards.mapNotNull {
                 val link = card.selectFirst("h5 a")
                 val title = link?.text() ?: ""
                 val url = link?.attr("abs:href") ?: ""
@@ -372,23 +366,20 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                     SAnime.create().apply {
                         this.title = title
                         this.url = fixUrl(url)
-                        val img = card.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
-                        this.thumbnail_url = (img?.attr("abs:data-src")?.takeIf { it.isNotEmpty() } 
-                            ?: img?.attr("abs:data-lazy-src")?.takeIf { it.isNotEmpty() }
-                            ?: img?.attr("abs:src") ?: "").replace(" ", "%20")
+                        // No default thumbnail
+                        this.thumbnail_url = ""
                     }
                 } else null
             }
         } else {
-            document.select("a").mapNotNull { element ->
-                val title = element.text().trim()
-                val url = element.attr("abs:href")
+            document.select("a").mapNotNull {
+                val title = it.text().trim()
+                val url = it.attr("abs:href")
                 if (title.isNotEmpty() && isValidDirectoryItem(title, url)) {
                     SAnime.create().apply {
                         this.title = if (title.endsWith("/")) title.dropLast(1) else title
                         this.url = fixUrl(url)
-                        val finalUrl = if (url.endsWith("/")) url else "$url/"
-                        this.thumbnail_url = getThumbnail(finalUrl, "") 
+                        this.thumbnail_url = ""
                     }
                 } else null
             }
@@ -406,8 +397,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun latestUpdatesRequest(page: Int) = popularAnimeRequest(page)
     override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
 
-    private var dynamicCategories: Array<String> = emptyArray()
-
     override fun getFilterList(): AnimeFilterList {
         if (dynamicCategories.isEmpty()) {
             fetchFilters()
@@ -415,6 +404,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         return Filters.getFilterList(dynamicCategories)
     }
 
+    private var dynamicCategories: Array<String> = emptyArray()
     private fun fetchFilters() {
         thread {
             try {
@@ -505,12 +495,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         } else {
             SAnime.create().apply {
                 status = SAnime.COMPLETED
-                val img = document.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
-                var thumb = img?.attr("abs:src") ?: ""
-                if (thumb.isEmpty()) {
-                    thumb = document.selectFirst("a[href~=(?i)\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
-                }
-                thumbnail_url = thumb.replace(" ", "%20")
+                thumbnail_url = ""
             }
         }
     }
@@ -527,18 +512,16 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private fun getMovieDetails(document: Document) = SAnime.create().apply {
         status = SAnime.COMPLETED
-        thumbnail_url = document.selectFirst("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
-            ?.attr("abs:src")?.replace(" ", "%20") ?: ""
         genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
         description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
+        thumbnail_url = ""
     }
 
     private fun getSeriesDetails(document: Document) = SAnime.create().apply {
         status = SAnime.ONGOING
-        thumbnail_url = document.selectFirst("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
-            ?.attr("abs:src")?.replace(" ", "%20") ?: ""
         genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
         description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
+        thumbnail_url = ""
     }
 
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
@@ -564,7 +547,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     private fun extractEpisodes(document: Document): List<EpisodeData> {
-        return document.select("div.card, div.episode-item, div.download-link").mapNotNull { element ->
+        return document.select("div.card, div.episode-item, div.download-link").mapNotNull {
             val titleElement = element.selectFirst("h5") ?: return@mapNotNull null
             val rawTitle = titleElement.ownText().trim()
             val name = rawTitle.split("&nbsp;").first().trim()
@@ -583,7 +566,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     private fun getMovieMedia(document: Document): List<SEpisode> {
         val linkElement = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], a[href*=/s/lazyload/], .download-link a").lastOrNull()
         val url = linkElement?.attr("abs:href")?.let { it.replace(" ", "%20") } ?: ""
-        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
+        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "").trim() ?: ""
         
         return listOf(SEpisode.create().apply {
             this.url = url
@@ -620,9 +603,9 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             val fileEpisodes = mutableListOf<SEpisode>()
             val subDirs = mutableListOf<String>()
 
-            document.select("a").forEach { element ->
-                val href = element.attr("href")
-                val text = element.text().trim()
+            document.select("a").forEach {
+                val href = it.attr("href")
+                val text = it.text().trim()
 
                 if (href.contains("..") || href.startsWith("?") || href.contains("_h5ai") || 
                     href.contains("?C=") || href.contains("?O=") || isIgnored(text)) return@forEach
@@ -648,10 +631,10 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             }
 
             coroutineScope {
-                subDirs.map { dir ->
+                subDirs.map {
                     async(Dispatchers.IO) {
                         semaphore.withPermit {
-                            parseDirectory(dir, depth - 1)
+                            parseDirectory(it, depth - 1)
                         }
                     }
                 }.awaitAll().flatten()
