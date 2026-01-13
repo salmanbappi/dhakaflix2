@@ -428,16 +428,25 @@ class DhakaFlix2 : AnimeHttpSource() {
     private val semaphore = Semaphore(10)
 
     private suspend fun parseDirectoryParallel(document: Document): List<SEpisode> {
-        return parseDirectory(document.location())
+        return parseDirectory(document.location(), 3, document)
     }
 
-    private suspend fun parseDirectory(url: String, depth: Int = 3): List<SEpisode> {
+    private suspend fun parseDirectory(url: String, depth: Int = 3, initialDocument: Document? = null): List<SEpisode> {
         if (depth < 0) return emptyList()
 
         return try {
-            val response = client.newCall(GET(url, headers)).execute()
-            val document = response.asJsoup()
-            val currentHttpUrl = response.request.url
+            val document: Document
+            val currentHttpUrl: HttpUrl
+
+            if (initialDocument != null) {
+                document = initialDocument
+                currentHttpUrl = document.location().toHttpUrl()
+            } else {
+                val response = client.newCall(GET(url, headers)).execute()
+                document = response.asJsoup()
+                currentHttpUrl = response.request.url
+            }
+
             val normalizedBaseUrl = if (url.endsWith("/")) url else "$url/"
 
             val fileEpisodes = mutableListOf<SEpisode>()
