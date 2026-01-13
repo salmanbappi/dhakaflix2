@@ -262,7 +262,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":(null|\\d+)", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":(null|\\d+)", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
@@ -583,7 +583,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     private fun getMovieMedia(document: Document): List<SEpisode> {
         val linkElement = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], a[href*=/s/lazyload/], .download-link a").lastOrNull()
         val url = linkElement?.attr("abs:href")?.let { it.replace(" ", "%20") } ?: ""
-        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "").trim() ?: ""
+        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
         
         return listOf(SEpisode.create().apply {
             this.url = url
