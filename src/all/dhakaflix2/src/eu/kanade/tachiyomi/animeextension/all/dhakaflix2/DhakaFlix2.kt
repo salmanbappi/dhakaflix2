@@ -500,7 +500,17 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         }}.reversed()
     }
 
-    override suspend fun getVideoList(episode: SEpisode): List<Video> = listOf(Video(episode.url, "Video", episode.url))
+    override suspend fun getVideoList(episode: SEpisode): List<Video> {
+        val url = fixUrl(episode.url)
+        val httpUrl = url.toHttpUrlOrNull()
+        val referer = httpUrl?.let { "${it.scheme}://${it.host}/" } ?: "$baseUrl/"
+        
+        val videoHeaders = headersBuilder()
+            .add("Referer", referer)
+            .build()
+            
+        return listOf(Video(url, "Video", url, headers = videoHeaders))
+    }
     override fun episodeListParse(response: Response): List<SEpisode> = throw Exception("Not used")
     override fun videoListParse(response: Response): List<Video> = throw Exception("Not used")
 
