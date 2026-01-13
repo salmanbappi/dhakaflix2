@@ -63,6 +63,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     override val client: OkHttpClient = super.client.newBuilder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
+        .connectionPool(okhttp3.ConnectionPool(10, 5, TimeUnit.MINUTES))
         .addInterceptor { chain ->
             val original = chain.request()
             val requestUrl = original.url
@@ -72,6 +73,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .header("Accept", "*/*")
                 .header("Referer", referer)
+                .header("Connection", "keep-alive")
                 .build()
             
             chain.proceed(newRequest)
@@ -86,8 +88,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         })
         .dispatcher(okhttp3.Dispatcher().apply {
-            maxRequests = 60
-            maxRequestsPerHost = 30
+            maxRequests = 40
+            maxRequestsPerHost = 15
         })
         .build()
 
@@ -152,7 +154,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         return u.replace(" ", "%20").replace("&", "%26")
     }
 
-    private val enrichmentSemaphore = Semaphore(10)
+    private val enrichmentSemaphore = Semaphore(5)
 
     private suspend fun enrichAnimes(animes: List<SAnime>) {
         val useTmdb = preferences.getBoolean(PREF_USE_TMDB_COVERS, false)
@@ -163,7 +165,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
         withTimeoutOrNull(5000) {
             coroutineScope {
-                animes.map { anime ->
+                animes.take(15).map { anime -> // Limit grid enrichment to first 15 to keep it fast
                     async {
                         enrichmentSemaphore.withPermit {
                             val tmdbCover = fetchTmdbImage(anime.title)
@@ -449,9 +451,17 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
         if (apiKey.isBlank()) return null
 
-        // Improved cleaning: Remove franchise noise like "Doraemon The Movie-" to get specific matches
-        var cleanTitle = title.replace(Regex("(?i)Doraemon\\s+The\\s+Movie-", RegexOption.IGNORE_CASE), "")
-        cleanTitle = cleanTitle.replace(Regex("(?i)\\(\\d{4}\\)|\\[\\d{4}\\]|\\d{3,4}p|576p|480p|720p|1080p|HDTC|HDRip|WEB-DL|BluRay|HC|HQ|x264|x265|HEVC|H\\.264|H\\.265|\\(Hindi Dubbed\\)|Hindi Dubbed|Dual Audio"), "").trim()
+        // Aggressively clean title to fix Doraemon and other franchise cover mismatches
+        var cleanTitle = title
+            .replace(Regex("(?i)Doraemon\\s+The\\s+Movie-?", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("(?i)\\(.*?\\)"), "") // Remove anything in parentheses
+            .replace(Regex("(?i)\\[.*?\\]"), "") // Remove anything in brackets
+            .replace(Regex("(?i)\\d{3,4}p|576p|480p|720p|1080p|2160p|4k"), "")
+            .replace(Regex("(?i)HDTC|HDRip|WEB-DL|BluRay|BRRip|BDRip|DVDRip|HC|HQ|x264|x265|HEVC|H\\.264|H\\.265"), "")
+            .replace(Regex("(?i)Hindi Dubbed|Dual Audio|MSubs|ESub|Sub", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("[-_.]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
         
         val url = "https://api.themoviedb.org/3/search/multi".toHttpUrl().newBuilder()
             .addQueryParameter("api_key", apiKey)
