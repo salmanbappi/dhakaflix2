@@ -96,6 +96,7 @@ jobs:
             exit 1
           fi
           
+          # Use GH_PAT for cloning and pushing with bearer token
           git clone https://x-access-token:${MY_GH_PAT}@github.com/salmanbappi/extensions-repo.git repo_tmp
           
           PKG_NAME="eu.kanade.tachiyomi.animeextension.all.dhakaflix2"
@@ -104,7 +105,6 @@ jobs:
           TARGET_NAME="$PKG_NAME-v$VERSION_NAME-c$VERSION_CODE.apk"
           
           mkdir -p repo_tmp/apk
-          # Find the signed APK dynamically to avoid path mismatches
           SIGNED_APK=$(find src/all/dhakaflix2/build/outputs/apk/release -name "*-signed.apk" | head -n 1)
           if [ -z "$SIGNED_APK" ]; then
             echo "❌ ERROR: Signed APK not found."
@@ -121,4 +121,6 @@ jobs:
           git add index.min.json repo.json
           
           git commit -m "Update DhakaFlix 2 to v$VERSION_NAME"
+          # Explicitly set the remote with token for pushing
+          git remote set-url origin https://x-access-token:${MY_GH_PAT}@github.com/salmanbappi/extensions-repo.git
           git push origin main
