@@ -133,7 +133,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
         if (apiKey.isBlank()) return
 
-        // Reduced total timeout to 8s to prevent UI hanging
         withTimeoutOrNull(8000) {
             coroutineScope {
                 animes.take(40).map { anime ->
@@ -213,9 +212,9 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val folders = list.filter { it.url.endsWith("/") }.map { it.url }.toSet()
         if (folders.isEmpty()) return list
         
-        return list.filter { item ->
-            if (item.url.endsWith("/")) return@filter true
-            folders.none { folderUrl -> item.url.startsWith(folderUrl) }
+        return list.filter {
+            if (it.url.endsWith("/")) return@filter true
+            folders.none { folderUrl -> it.url.startsWith(folderUrl) }
         }
     }
 
@@ -246,10 +245,9 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         response.close()
 
         if (baseUrl.contains("172.16.50.7")) {
-            val results = mutableListOf<SAnime>()
-            Server7Parser.parseServer7Response(bodyString, baseUrl, serverName, results, query)
-            // Lower threshold for exact prefixes
-            return results.filter { 
+            val res = mutableListOf<SAnime>()
+            Server7Parser.parseServer7Response(bodyString, baseUrl, serverName, res, query)
+            return res.filter {
                 it.title.startsWith(query, true) || diceCoefficient(it.title.lowercase(), query.lowercase()) > 0.15 
             }
         }
@@ -263,16 +261,13 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 val item = searchArr.getJSONObject(i)
                 val href = item.getString("href").replace('\\', '/')
                 val size = item.opt("size")
-                val isFolder = size == null || size == JSONObject.NULL || size == "null"
-
+                
                 var cleanHrefForTitle = href
                 while (cleanHrefForTitle.endsWith("/")) cleanHrefForTitle = cleanHrefForTitle.dropLast(1)
                 val rawTitle = cleanHrefForTitle.substringAfterLast("/")
                 val title = try { URLDecoder.decode(rawTitle, "UTF-8").trim() } catch (e: Exception) { rawTitle.trim() }
 
                 if (title.isBlank() || isIgnored(title, query)) continue
-
-                // Check startsWith BEFORE threshold
                 if (!title.startsWith(query, true) && diceCoefficient(title.lowercase(), query.lowercase()) < 0.15) continue
 
                 val anime = SAnime.create().apply {
@@ -281,38 +276,32 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                     this.url = "$baseUrl$finalHref"
                     this.thumbnail_url = "" 
                 }
-                
                 results.add(anime)
             }
-        } catch (e: Exception) {
-        }
+        } catch (e: Exception) {}
         return results
     }
 
-    private fun isIgnored(text: String, query: String = ""):
+    private fun isIgnored(text: String, query: String = ""): Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai", "Subtitle", "Extras", "Sample", "Trailer")
         if (ignored.any { text.contains(it, ignoreCase = true) }) return true
         
         val uploaderTags = listOf("-LOKI", "-LOKiHD", "-TDoc", "-Tuna", "-PSA", "-Pahe", "-QxR", "-YIFY", "-RARBG")
-        // Improved ignore logic: Only ignore if the tag is NOT the query
         for (tag in uploaderTags) {
             if (text.contains(tag, ignoreCase = true)) {
-                // If query is "Loki", and text is "Loki S01...", "Loki" != "-LOKiHD".
-                // But if text is "Baghdad... -LOKiHD", we want to ignore.
-                // If query is "Loki", and we match "-LOKiHD", we should ignore UNLESS query == tag (minus dash)
                 val cleanTag = tag.replace("-", "")
-                if (query.equals(cleanTag, ignoreCase = true)) return false // Allow it
-                return true // Ignore files with uploader tags generally
+                if (query.equals(cleanTag, ignoreCase = true)) return false
+                return true
             }
         }
         return false
     }
 
-    private fun sortByTitle(list: List<SAnime>, query: String):
-        return list.sortedByDescending { anime ->
-            var score = diceCoefficient(anime.title.lowercase(), query.lowercase())
-            if (anime.title.startsWith(query, true)) score = 1.0 // Force max score for prefix match
-            if (anime.url.endsWith("/")) score += 0.5 // Boost folders to top
+    private fun sortByTitle(list: List<SAnime>, query: String): List<SAnime> {
+        return list.sortedByDescending {
+            var score = diceCoefficient(it.title.lowercase(), query.lowercase())
+            if (it.title.startsWith(query, true)) score = 1.0
+            if (it.url.endsWith("/")) score += 0.5
             score
         }
     }
@@ -321,17 +310,14 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val n1 = s1.length
         val n2 = s2.length
         if (n1 == 0 || n2 == 0) return 0.0
-        
         val bigrams1 = HashSet<String>()
         for (i in 0 until n1 - 1) bigrams1.add(s1.substring(i, i + 2))
-        
         var intersection = 0
         for (i in 0 until n2 - 1) {
             val bigram = s2.substring(i, i + 2)
             if (bigrams1.contains(bigram)) intersection++
         }
-        
-        return (2.0 * intersection) / (n1 + n2 - 2)
+        return (2.0 * intersection) / (n1 + n2 - 2).coerceAtLeast(1)
     }
 
     override fun popularAnimeRequest(page: Int): Request = GET("http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/%282025%29/", headers)
@@ -367,10 +353,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun latestUpdatesRequest(page: Int) = popularAnimeRequest(page)
     override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
 
-    override fun getFilterList(): AnimeFilterList {
-        // Disabled dynamic fetching to prevent server mismatches
-        return Filters.getFilterList(emptyArray())
-    }
+    override fun getFilterList(): AnimeFilterList = Filters.getFilterList(emptyArray())
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request = GET(fixUrl(Filters.getUrl(query, filters)), headers)
     override fun searchAnimeParse(response: Response) = popularAnimeParse(response)
@@ -386,7 +369,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     private fun fetchTmdbImage(title: String): String? {
-        val cacheKey = "tmdb_cover_".plus(title.hashCode())
+        val cacheKey = "tmdb_cover_${title.hashCode()}"
         val cached = preferences.getString(cacheKey, null)
         if (cached != null) return cached.takeIf { it.isNotEmpty() }
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
@@ -459,28 +442,23 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             val titleElement = element.selectFirst("h5") ?: return@mapNotNull null
             val name = titleElement.ownText().split("&nbsp;").first().trim()
             val url = titleElement.selectFirst("a")?.attr("abs:href") ?: ""
-            val quality = element.selectFirst("h5 .badge-fill")?.text()?.let {
+            val q = element.selectFirst("h5 .badge-fill")?.text()?.let {
                 Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*", RegexOption.IGNORE_CASE).replace(it, "$1")
             } ?: ""
             val episodeName = element.selectFirst("h4")?.ownText()?.trim() ?: ""
             val size = element.selectFirst("h4 .badge-outline")?.text()?.trim() ?: ""
-            
-            if (name.isNotEmpty() && url.isNotEmpty()) {
-                EpisodeData(name, url, quality, episodeName, size)
-            } else {
-                null
-            }
+            if (name.isNotEmpty() && url.isNotEmpty()) EpisodeData(name, url, q, episodeName, size) else null
         }
     }
 
     private fun getMovieMedia(document: Document): List<SEpisode> {
         val url = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], .download-link a").lastOrNull()?.attr("abs:href")?.replace(" ", "%20") ?: ""
-        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
+        val q = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
         return listOf(SEpisode.create().apply {
             this.url = url
             this.name = "Movie"
             this.episode_number = 1f
-            this.scanlator = quality
+            this.scanlator = q
         })
     }
 
@@ -491,7 +469,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         if (depth < 0) return emptyList()
         val doc = initialDoc ?: try { client.newCall(GET(url, headers)).execute().asJsoup() } catch (e: Exception) { return emptyList() }
         val currentHttpUrl = doc.location().toHttpUrlOrNull() ?: return emptyList()
-        
         val fileEpisodes = mutableListOf<SEpisode>()
         val subDirs = mutableListOf<String>()
 
@@ -500,7 +477,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             val text = element.text().trim()
             if (href.contains("..") || href.startsWith("?") || isIgnored(text)) return@forEach
             val absUrl = currentHttpUrl.resolve(href)?.toString() ?: return@forEach
-            
             if (isVideoFile(href)) {
                 fileEpisodes.add(SEpisode.create().apply {
                     this.url = absUrl
@@ -509,11 +485,9 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 })
             } else if (href.endsWith("/") || absUrl.endsWith("/")) subDirs.add(absUrl)
         }
-
         val subDirEpisodes = coroutineScope {
             subDirs.map { async(Dispatchers.IO) { semaphore.withPermit { parseDir(it, depth - 1) } } }.awaitAll().flatten()
         }
-
         return (fileEpisodes + subDirEpisodes).distinctBy { it.url }.sortedBy { it.name }.reversed()
     }
 
@@ -523,9 +497,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     private fun sortEpisodes(list: List<EpisodeData>): List<SEpisode> {
-        return list.sortedWith(compareBy<EpisodeData> { 
-            parseEpisodeNumber(it.seasonEpisode) 
-        }.thenBy { it.seasonEpisode }).map {
+        return list.sortedWith(compareBy<EpisodeData> { parseEpisodeNumber(it.seasonEpisode) }.thenBy { it.seasonEpisode }).map {
             SEpisode.create().apply {
                 url = it.videoUrl
                 name = if (it.seasonEpisode.isNotEmpty()) "${it.seasonEpisode} - ${it.episodeName}".trim() else it.episodeName
@@ -546,12 +518,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val url = fixUrl(episode.url)
         val httpUrl = url.toHttpUrlOrNull()
         val referer = httpUrl?.let { "${it.scheme}://${it.host}/" } ?: "$baseUrl/"
-        
-        val videoHeaders = headersBuilder()
-            .add("Referer", referer)
-            .build()
-            
-        return listOf(Video(url, "Video", url, headers = videoHeaders))
+        return listOf(Video(url, "Video", url, headers = headersBuilder().add("Referer", referer).build()))
     }
     override fun episodeListParse(response: Response): List<SEpisode> = throw Exception("Not used")
     override fun videoListParse(response: Response): List<Video> = throw Exception("Not used")
@@ -561,8 +528,4 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
         private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\\\.\\d{1,3}\\\\.\\d{1,3}\\\\.\\d{1,3})\\s*http")
-        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
-        private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
-    }
-}
+        private val IP_HTTP_REGEX = Regex("(\\\\d{1,3}\\\\.`
