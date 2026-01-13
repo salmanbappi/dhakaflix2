@@ -121,7 +121,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             title = "Clear TMDb Cache"
             summary = "Clears all cached TMDb poster URLs"
             setDefaultValue(false)
-            setOnPreferenceChangeListener { _, newValue ->
+            setOnPreferenceChangeListener {
+                _, newValue ->
                 if (newValue as Boolean) {
                     val editor = preferences.edit()
                     preferences.all.keys.filter { it.startsWith("tmdb_cover_") }.forEach {
@@ -150,7 +151,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         }
         
         u = IP_HTTP_REGEX.replace(u, "$1/http")
-        u = DOUBLE_PROTOCOL_REGEX.replace(u, "http$1://$2")
+        u = DOUBLE_PROTOCOL_REGEX.replace(u, "http$1://")
         u = u.replace(":://://", ":://")
         u = MULTI_SLASH_REGEX.replace(u, "/")
         
@@ -261,7 +262,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":(null|\d+)", Pattern.CASE_INSENSITIVE)
+            val pattern = Pattern.compile("\"href\":\"([^"]+)\"[^}]*\"size\":(null|\\d+)", Pattern.CASE_INSENSITIVE)
             val matcher = pattern.matcher(bodyString)
             
             while (matcher.find()) {
@@ -695,9 +696,9 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
         private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*")
-        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http")
-        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
+        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*", RegexOption.IGNORE_CASE)
+        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http", RegexOption.IGNORE_CASE)
+        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE)
         private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
     }
 }

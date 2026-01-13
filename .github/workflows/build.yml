@@ -104,7 +104,7 @@ jobs:
           TARGET_NAME="$PKG_NAME-v$VERSION_NAME-c$VERSION_CODE.apk"
           
           mkdir -p repo_tmp/apk
-          cp src/all/dhakaflix2/build/outputs/apk/release/aniyomi-all.dhakaflix2-v$VERSION_NAME-release-unsigned-signed.apk repo_tmp/apk/$TARGET_NAME
+          cp "${{ steps.sign_app.outputs.signedReleaseFile }}" repo_tmp/apk/$TARGET_NAME
           
           cd repo_tmp
           git config user.name "salmanbappi"
@@ -115,5 +115,4 @@ jobs:
           git add index.min.json repo.json
           
           git commit -m "Update DhakaFlix 2 to v$VERSION_NAME"
-          git remote set-url origin https://salmanbappi:${MY_GH_PAT}@github.com/salmanbappi/extensions-repo.git
           git push origin main
