@@ -60,11 +60,14 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         Injekt.get<Application>().getSharedPreferences("source_$id", 0)
     }
 
+    private val searchCache = mutableMapOf<String, List<SAnime>>()
+    private val cacheTime = mutableMapOf<String, Long>()
+
     override val client: OkHttpClient = super.client.newBuilder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .connectionPool(okhttp3.ConnectionPool(10, 5, TimeUnit.MINUTES))
-        .addInterceptor { chain ->
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .connectionPool(okhttp3.ConnectionPool(15, 5, TimeUnit.MINUTES))
+        .addInterceptor {
             val original = chain.request()
             val requestUrl = original.url
             val referer = "${requestUrl.scheme}://${requestUrl.host}/"
@@ -89,7 +92,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         })
         .dispatcher(okhttp3.Dispatcher().apply {
             maxRequests = 40
-            maxRequestsPerHost = 15
+            maxRequestsPerHost = 10 // Lowered to be gentler on slow BDIX servers
         })
         .build()
 
@@ -118,7 +121,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             title = "Clear TMDb Cache"
             summary = "Clears all cached TMDb poster URLs"
             setDefaultValue(false)
-            setOnPreferenceChangeListener { _, newValue ->
+            setOnPreferenceChangeListener {
+                _, newValue ->
                 if (newValue as Boolean) {
                     val editor = preferences.edit()
                     preferences.all.keys.filter { it.startsWith("tmdb_cover_") }.forEach {
@@ -154,7 +158,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         return u.replace(" ", "%20").replace("&", "%26")
     }
 
-    private val enrichmentSemaphore = Semaphore(5)
+    private val enrichmentSemaphore = Semaphore(3) // Further lowered to prioritize main loading
 
     private suspend fun enrichAnimes(animes: List<SAnime>) {
         val useTmdb = preferences.getBoolean(PREF_USE_TMDB_COVERS, false)
@@ -165,7 +169,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
         withTimeoutOrNull(5000) {
             coroutineScope {
-                animes.take(15).map { anime -> // Limit grid enrichment to first 15 to keep it fast
+                animes.take(12).map { anime -> // Even fewer for faster navigation
                     async {
                         enrichmentSemaphore.withPermit {
                             val tmdbCover = fetchTmdbImage(anime.title)
@@ -190,71 +194,67 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
-        val res = if (query.isNotEmpty()) {
-            withTimeoutOrNull(40000) {
-                coroutineScope {
-                    val searchTasks = mutableListOf<Triple<String, String, String>>()
-                    listOf(
-                        "http://172.16.50.14" to "DHAKA-FLIX-14",
-                        "http://172.16.50.12" to "DHAKA-FLIX-12",
-                        "http://172.16.50.9" to "DHAKA-FLIX-9",
-                        "http://172.16.50.7" to "DHAKA-FLIX-7"
-                    ).forEach { (baseUrl, serverName) ->
-                        val paths = mutableListOf("/$serverName/")
-                        if (serverName == "DHAKA-FLIX-12") paths.add("/$serverName/TV-WEB-Series/")
-                        if (serverName == "DHAKA-FLIX-9") paths.add("/$serverName/Anime & Cartoon TV Series/")
-                        
-                        paths.forEach { path ->
-                            searchTasks.add(Triple(baseUrl, serverName, path))
-                        }
-                    }
+        if (query.isEmpty()) return super.getSearchAnime(page, query, filters)
 
-                    val queries = listOf(query, "$query movie").distinct()
-                    val allResults = searchTasks.flatMap { task ->
-                        queries.map { q ->
-                            async(Dispatchers.IO) {
-                                val serverResults = mutableListOf<SAnime>()
-                                try {
-                                    searchOnServer(task.first, task.second, q, serverResults, 12000L, task.third)
-                                } catch (e: Exception) {}
-                                serverResults
-                            }
-                        }
-                    }.awaitAll().flatten().distinctBy { it.url }
-
-                    val folders = allResults.filter { it.url.endsWith("/") }
-                    val files = allResults.filter { !it.url.endsWith("/") }
-                    
-                    // If we have enough folders, only show folders to keep it clean
-                    val finalResults = if (folders.size >= 5) {
-                        folders.take(100)
-                    } else {
-                        (folders + files).take(100)
-                    }
-
-                    AnimesPage(sortByTitle(finalResults, query), false)
-                }
-            } ?: AnimesPage(emptyList(), false)
-        } else {
-            super.getSearchAnime(page, query, filters)
+        val now = System.currentTimeMillis()
+        if (searchCache.containsKey(query) && now - (cacheTime[query] ?: 0) < 600000) {
+            return AnimesPage(searchCache[query]!!, false)
         }
+
+        val res = withTimeoutOrNull(60000) {
+            coroutineScope {
+                val searchTasks = mutableListOf<Triple<String, String, String>>()
+                listOf(
+                    "http://172.16.50.14" to "DHAKA-FLIX-14",
+                    "http://172.16.50.12" to "DHAKA-FLIX-12",
+                    "http://172.16.50.9" to "DHAKA-FLIX-9",
+                    "http://172.16.50.7" to "DHAKA-FLIX-7"
+                ).forEach { (baseUrl, serverName) ->
+                    searchTasks.add(Triple(baseUrl, serverName, "/$serverName/"))
+                    // Specifically target the slow Server 9 subpaths if looking for Anime
+                    if (serverName == "DHAKA-FLIX-9" && (query.contains("Doraemon", true) || query.contains("Anime", true))) {
+                         searchTasks.add(Triple(baseUrl, serverName, "/$serverName/Anime & Cartoon TV Series/"))
+                    }
+                }
+
+                val allResults = searchTasks.distinct().map {
+                    async(Dispatchers.IO) {
+                        val serverResults = mutableListOf<SAnime>()
+                        try {
+                            searchOnServer(it.first, it.second, query, serverResults, 25000L, it.third)
+                        } catch (e: Exception) {}
+                        serverResults
+                    }
+                }.awaitAll().flatten().distinctBy { it.url }
+
+                val folders = allResults.filter { it.url.endsWith("/") }
+                val files = allResults.filter { !it.url.endsWith("/") }
+                
+                val finalResults = if (folders.size >= 3) {
+                    (folders + files.take(20)).take(100)
+                } else {
+                    allResults.take(100)
+                }
+
+                sortByTitle(finalResults, query)
+            }
+        } ?: emptyList()
         
-        return res.also { enrichAnimes(it.animes) }
+        searchCache[query] = res
+        cacheTime[query] = now
+        
+        return AnimesPage(res, false).also { enrichAnimes(it.animes) }
     }
 
     private fun searchOnServer(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, path: String) {
-        val searchClient = client.newBuilder()
-            .readTimeout(timeout, TimeUnit.MILLISECONDS)
-            .build()
-
         val searchUrl = "$serverUrl/$serverName/"
         val jsonPayload = "{\"action\":\"get\",\"search\":{\"href\":\"$path\",\"pattern\":\"$query\",\"ignorecase\":true}}"
         val body = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
         
         val request = POST(searchUrl, headers, body)
-        searchClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return
-            val bodyString = response.body?.string() ?: return
+        client.newCall(request).execute().use {
+            if (!it.isSuccessful) return
+            val bodyString = it.body?.string() ?: return
             
             if (serverUrl.contains("172.16.50.7")) {
                 Server7Parser.parseServer7Response(bodyString, serverUrl, serverName, results, query)
@@ -263,443 +263,4 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
             val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
             
-            val pattern = Pattern.compile("\\\"href\\\":\\\"([^\\\"]+)\\\"[^}]*\\\"size\\\":(null|\\\\d+)", Pattern.CASE_INSENSITIVE)
-            val matcher = pattern.matcher(bodyString)
-            
-            while (matcher.find()) {
-                var href = matcher.group(1).replace('\\', '/').trim()
-                href = href.replace(Regex("/+"), "/")
-                
-                val size = matcher.group(2)
-                val isFolder = size == "null"
-                
-                var cleanHrefForTitle = href
-                while (cleanHrefForTitle.endsWith("/")) {
-                    cleanHrefForTitle = cleanHrefForTitle.dropLast(1)
-                }
-                
-                val rawTitle = cleanHrefForTitle.substringAfterLast("/")
-                val title = try {
-                    URLDecoder.decode(rawTitle, "UTF-8").trim()
-                } catch (e: Exception) {
-                    rawTitle.trim()
-                }
-                
-                if (title.isEmpty() || isIgnored(title, query)) continue
-                
-                // If it's a file, we only add it if we don't have a folder with the same name logic
-                if (!isFolder && results.any { it.url.contains(cleanHrefForTitle) }) continue
-                
-                val anime = SAnime.create().apply {
-                    this.title = title
-                    val finalHref = if (href.endsWith("/") || isFolder) (if (href.endsWith("/")) href else "$href/") else href
-                    this.url = "$hostUrl$finalHref"
-                    
-                    val thumbSuffix = if (serverName.contains("9")) "a11.jpg" else "a_AL_.jpg"
-                    this.thumbnail_url = (this.url + thumbSuffix).replace(" ", "%20").replace("&", "%26")
-                }
-                
-                synchronized(results) {
-                    if (results.none { it.url == anime.url }) {
-                        results.add(anime)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun isIgnored(text: String, query: String = ""): Boolean {
-        val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai", "Subtitle", "Extras", "Sample", "Trailer")
-        if (ignored.any { text.contains(it, ignoreCase = true) }) return true
-        
-        // Filter out uploader tags that cause false positives in search
-        val uploaderTags = listOf("-LOKI", "-LOKiHD", "-TDoc", "-Tuna", "-PSA", "-Pahe", "-QxR", "-YIFY", "-RARBG")
-        if (uploaderTags.any { text.endsWith(it, ignoreCase = true) || text.contains("$it.") || text.contains("$it ") }) {
-             // Only ignore if the query itself is not the tag
-             if (query.isNotEmpty() && uploaderTags.any { it.substring(1).equals(query, ignoreCase = true) }) {
-                 return false
-             }
-             return true
-        }
-
-        return false
-    }
-
-    private fun sortByTitle(list: List<SAnime>, query: String): List<SAnime> {
-        val lowerQuery = query.lowercase()
-        return list.sortedWith(compareByDescending<SAnime> {
-            val lowerTitle = it.title.lowercase()
-            when {
-                lowerTitle == lowerQuery -> 100.0
-                lowerTitle.startsWith(lowerQuery) -> 90.0 + diceCoefficient(it.title, query)
-                else -> diceCoefficient(it.title, query)
-            }
-        }.thenBy { it.title.length })
-    }
-
-    private fun diceCoefficient(s1: String, s2: String): Double {
-        val str1 = s1.lowercase()
-        val str2 = s2.lowercase()
-        if (str1.length < 2 || str2.length < 2) return 0.0
-        
-        val pairs1 = (0 until str1.length - 1).map { str1.substring(it, it + 2) }.toSet()
-        val pairs2 = (0 until str2.length - 1).map { str2.substring(it, it + 2) }
-        
-        var intersection = 0
-        for (pair in pairs2) {
-            if (pair in pairs1) intersection++
-        }
-        
-        return 2.0 * intersection / (str1.length + str2.length - 2)
-    }
-
-    override fun popularAnimeRequest(page: Int): Request {
-        return GET("http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/%282025%29/", headers)
-    }
-
-    override fun popularAnimeParse(response: Response): AnimesPage {
-        val document = response.asJsoup()
-        val cards = document.select("div.card")
-        val animeList = if (cards.isNotEmpty()) {
-            cards.mapNotNull { card ->
-                val link = card.selectFirst("h5 a")
-                val title = link?.text() ?: ""
-                val url = link?.attr("abs:href") ?: ""
-                if (title.isNotEmpty() && url.isNotEmpty()) {
-                    SAnime.create().apply {
-                        this.title = title
-                        this.url = fixUrl(url)
-                        val img = card.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
-                        this.thumbnail_url = (img?.attr("abs:data-src")?.takeIf { it.isNotEmpty() } 
-                            ?: img?.attr("abs:data-lazy-src")?.takeIf { it.isNotEmpty() }
-                            ?: img?.attr("abs:src") ?: "").replace(" ", "%20")
-                    }
-                } else null
-            }
-        } else {
-            document.select("a").mapNotNull { element ->
-                val title = element.text().trim()
-                val url = element.attr("abs:href")
-                if (title.isNotEmpty() && isValidDirectoryItem(title, url)) {
-                    SAnime.create().apply {
-                        this.title = if (title.endsWith("/")) title.dropLast(1) else title
-                        this.url = fixUrl(url)
-                        val finalUrl = if (url.endsWith("/")) url else "$url/"
-                        this.thumbnail_url = (finalUrl + "a_AL_.jpg").replace(" ", "%20").replace("&", "%26")
-                    }
-                } else null
-            }
-        }
-        return AnimesPage(animeList, false)
-    }
-
-    private fun isValidDirectoryItem(title: String, url: String): Boolean {
-        val lowerTitle = title.lowercase()
-        if (isIgnored(lowerTitle, "")) return false
-        if (url.contains("../") || url.contains("?")) return false
-        return true
-    }
-
-    override fun latestUpdatesRequest(page: Int) = popularAnimeRequest(page)
-    override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
-
-    private var dynamicCategories: Array<String> = emptyArray()
-
-    override fun getFilterList(): AnimeFilterList {
-        if (dynamicCategories.isEmpty()) {
-            fetchFilters()
-        }
-        return Filters.getFilterList(dynamicCategories)
-    }
-
-    private fun fetchFilters() {
-        thread {
-            try {
-                val response = client.newCall(GET("$baseUrl/", headers)).execute()
-                val doc = response.asJsoup()
-                val sidebar = doc.select("ul.nav-sidebar a, .sidebar-menu a")
-                dynamicCategories = sidebar.map { it.text().trim() }.filter { it.isNotEmpty() }.toTypedArray()
-            } catch (e: Exception) {}
-        }
-    }
-
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        return GET(fixUrl(Filters.getUrl(query, filters)), headers)
-    }
-    override fun searchAnimeParse(response: Response) = popularAnimeParse(response)
-
-    override suspend fun getAnimeDetails(anime: SAnime): SAnime {
-        val parsedAnime = super.getAnimeDetails(anime)
-        val useTmdb = preferences.getBoolean(PREF_USE_TMDB_COVERS, false)
-        if (useTmdb) {
-            try {
-                val tmdbCover = fetchTmdbImage(anime.title)
-                if (tmdbCover != null) {
-                    parsedAnime.thumbnail_url = tmdbCover
-                    anime.thumbnail_url = tmdbCover
-                }
-            } catch (e: Exception) {}
-        }
-        return parsedAnime
-    }
-
-    private fun fetchTmdbImage(title: String): String? {
-        val cacheKey = "tmdb_cover_${title.hashCode()}"
-        val cached = preferences.getString(cacheKey, null)
-        if (cached != null) return cached.takeIf { it.isNotEmpty() }
-
-        val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
-        if (apiKey.isBlank()) return null
-
-        // Aggressively clean title to fix Doraemon and other franchise cover mismatches
-        var cleanTitle = title
-            .replace(Regex("(?i)Doraemon\\s+The\\s+Movie-?", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("(?i)\\(.*?\\)"), "") // Remove anything in parentheses
-            .replace(Regex("(?i)\\[.*?\\]"), "") // Remove anything in brackets
-            .replace(Regex("(?i)\\d{3,4}p|576p|480p|720p|1080p|2160p|4k"), "")
-            .replace(Regex("(?i)HDTC|HDRip|WEB-DL|BluRay|BRRip|BDRip|DVDRip|HC|HQ|x264|x265|HEVC|H\\.264|H\\.265"), "")
-            .replace(Regex("(?i)Hindi Dubbed|Dual Audio|MSubs|ESub|Sub", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("[-_.]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-        
-        val url = "https://api.themoviedb.org/3/search/multi".toHttpUrl().newBuilder()
-            .addQueryParameter("api_key", apiKey)
-            .addQueryParameter("query", cleanTitle)
-            .build()
-        val request = Request.Builder().url(url).build()
-        
-        try {
-            client.newCall(request).execute().use {
-                val body = it.body?.string() ?: return null
-                val json = JSONObject(body)
-                val results = json.optJSONArray("results") ?: return null
-                if (results.length() > 0) {
-                    val first = results.getJSONObject(0)
-                    val posterPath = first.optString("poster_path")
-                    if (posterPath.isNotEmpty() && posterPath != "null") {
-                        val thumb = "https://image.tmdb.org/t/p/w500$posterPath"
-                        preferences.edit().putString(cacheKey, thumb).apply()
-                        return thumb
-                    }
-                }
-            }
-        } catch (e: Exception) {}
-        
-        preferences.edit().putString(cacheKey, "").apply()
-        return null
-    }
-
-    override fun animeDetailsRequest(anime: SAnime): Request {
-        return GET(fixUrl(anime.url), headers)
-    }
-
-    override fun animeDetailsParse(response: Response): SAnime {
-        val document = response.asJsoup()
-        val mediaType = getMediaType(document)
-        
-        return if (mediaType != null) {
-            if (mediaType == "m") getMovieDetails(document) else getSeriesDetails(document)
-        } else {
-            SAnime.create().apply {
-                status = SAnime.COMPLETED
-                val img = document.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
-                var thumb = img?.attr("abs:src") ?: ""
-                if (thumb.isEmpty()) {
-                    thumb = document.selectFirst("a[href~=(?i)\\\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
-                }
-                thumbnail_url = thumb.replace(" ", "%20")
-            }
-        }
-    }
-
-    private fun getMediaType(document: Document): String? {
-        val html = document.select("script").html()
-        return when {
-            html.contains("/m/lazyload/") -> "m"
-            html.contains("/s/lazyload/") -> "s"
-            html.contains("/s/view/") -> "s"
-            else -> null
-        }
-    }
-
-    private fun getMovieDetails(document: Document) = SAnime.create().apply {
-        status = SAnime.COMPLETED
-        thumbnail_url = document.selectFirst("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
-            ?.attr("abs:src")?.replace(" ", "%20") ?: ""
-        genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
-        description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
-    }
-
-    private fun getSeriesDetails(document: Document) = SAnime.create().apply {
-        status = SAnime.ONGOING
-        thumbnail_url = document.selectFirst("figure.movie-detail-banner img, .movie-detail-banner img, .col-md-3 img, .poster img")
-            ?.attr("abs:src")?.replace(" ", "%20") ?: ""
-        genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
-        description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
-    }
-
-    override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
-        return withContext(Dispatchers.IO) {
-            withTimeoutOrNull(30000) {
-                val response = client.newCall(GET(fixUrl(anime.url), headers)).execute()
-                val document = response.asJsoup()
-                val mediaType = getMediaType(document)
-
-                val episodes = when (mediaType) {
-                    "s" -> {
-                        val extracted = extractEpisodes(document)
-                        if (extracted.isNotEmpty()) sortEpisodes(extracted) else parseDirectoryParallel(document)
-                    }
-                    "m" -> getMovieMedia(document)
-                    else -> parseDirectoryParallel(document)
-                }
-
-                if (episodes.isEmpty()) throw Exception("No results found")
-                episodes
-            } ?: emptyList()
-        }
-    }
-
-    private fun extractEpisodes(document: Document): List<EpisodeData> {
-        return document.select("div.card, div.episode-item, div.download-link").mapNotNull { element ->
-            val titleElement = element.selectFirst("h5") ?: return@mapNotNull null
-            val rawTitle = titleElement.ownText().trim()
-            val name = rawTitle.split("&nbsp;").first().trim()
-            val url = element.selectFirst("h5 a")?.attr("abs:href")?.trim() ?: ""
-            val qualityText = element.selectFirst("h5 .badge-fill")?.text() ?: ""
-            val quality = sizeRegex.replace(qualityText, "$1").trim()
-            val epName = element.selectFirst("h4")?.ownText()?.trim() ?: ""
-            val size = element.selectFirst("h4 .badge-outline")?.text()?.trim() ?: ""
-            
-            if (name.isNotEmpty() && url.isNotEmpty()) {
-                EpisodeData(name, url, quality, epName, size)
-            } else null
-        }
-    }
-
-    private fun getMovieMedia(document: Document): List<SEpisode> {
-        val linkElement = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], a[href*=/s/lazyload/], .download-link a").lastOrNull()
-        val url = linkElement?.attr("abs:href")?.let { it.replace(" ", "%20") } ?: ""
-        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
-        
-        return listOf(SEpisode.create().apply {
-            this.url = url
-            this.name = "Movie"
-            this.episode_number = 1f
-            this.scanlator = quality
-        })
-    }
-
-    private val semaphore = Semaphore(10)
-
-    private suspend fun parseDirectoryParallel(document: Document): List<SEpisode> {
-        return parseDirectory(document.location() ?: "", 3, document)
-    }
-
-    private suspend fun parseDirectory(url: String, depth: Int = 3, initialDocument: Document? = null): List<SEpisode> {
-        if (depth < 0) return emptyList()
-
-        return try {
-            val document: Document
-            val currentHttpUrl: HttpUrl
-
-            if (initialDocument != null) {
-                document = initialDocument
-                currentHttpUrl = document.location()?.toHttpUrlOrNull() ?: return emptyList()
-            } else {
-                val response = client.newCall(GET(url, headers)).execute()
-                document = response.asJsoup()
-                currentHttpUrl = response.request.url
-            }
-
-            val normalizedBaseUrl = if (url.endsWith("/")) url else "$url/"
-
-            val fileEpisodes = mutableListOf<SEpisode>()
-            val subDirs = mutableListOf<String>()
-
-            document.select("a").forEach { element ->
-                val href = element.attr("href")
-                val text = element.text().trim()
-
-                if (href.contains("..") || href.startsWith("?") || href.contains("_h5ai") || 
-                    href.contains("?C=") || href.contains("?O=") || isIgnored(text)) return@forEach
-
-                val absHttpUrl = currentHttpUrl.resolve(href) ?: return@forEach
-                val absUrl = absHttpUrl.toString()
-
-                if (!absUrl.startsWith(normalizedBaseUrl)) return@forEach
-
-                if (isVideoFile(href)) {
-                    fileEpisodes.add(SEpisode.create().apply {
-                        this.url = absUrl
-                        this.name = try { URLDecoder.decode(text, "UTF-8") } catch(e:Exception) { text }
-                        this.episode_number = -1f
-                    })
-                } else if (href.endsWith("/") || absUrl.endsWith("/")) {
-                     subDirs.add(absUrl)
-                }
-            }
-
-            if (fileEpisodes.isNotEmpty()) {
-                // If we found videos in this folder, we return them and STOP recursing deeper
-                // This is crucial for performance in large series
-                return fileEpisodes.sortedBy { it.name }.reversed()
-            }
-
-            // ONLY if no videos were found, we look into subdirectories (Season folders, etc.)
-            coroutineScope {
-                subDirs.map { dir ->
-                    async(Dispatchers.IO) {
-                        semaphore.withPermit {
-                            parseDirectory(dir, depth - 1)
-                        }
-                    }
-                }.awaitAll().flatten()
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-    private fun isVideoFile(href: String): Boolean {
-        val h = href.lowercase()
-        return listOf(".mkv", ".mp4", ".avi", ".ts", ".m4v", ".webm", ".mov").any { h.endsWith(it) || h.contains("$it?") }
-    }
-
-    private fun sortEpisodes(list: List<EpisodeData>): List<SEpisode> {
-        var episodeCount = 0f
-        return list.map {
-            SEpisode.create().apply {
-                url = it.videoUrl
-                name = "${it.seasonEpisode} - ${it.episodeName}".trim()
-                episode_number = ++episodeCount
-                scanlator = "${it.quality}  ${it.size}"
-            }
-        }.reversed()
-    }
-
-    override suspend fun getVideoList(episode: SEpisode): List<Video> {
-        return listOf(Video(episode.url, "Video", episode.url))
-    }
-
-    override fun episodeListParse(response: Response): List<SEpisode> = throw Exception("Not used")
-    override fun videoListParse(response: Response): List<Video> = throw Exception("Not used")
-
-    data class EpisodeData(
-        val seasonEpisode: String,
-        val videoUrl: String,
-        val quality: String,
-        val episodeName: String,
-        val size: String
-    )
-
-    companion object {
-        private const val PREF_TMDB_API_KEY = "tmdb_api_key"
-        private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val sizeRegex = Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*")
-        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http", RegexOption.IGNORE_CASE)
-        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://", RegexOption.IGNORE_CASE)
-        private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
-    }
-}
+            val pattern = Pattern.compile("\\\"href\\\":\\\"([^\\\"]+)\\\\
