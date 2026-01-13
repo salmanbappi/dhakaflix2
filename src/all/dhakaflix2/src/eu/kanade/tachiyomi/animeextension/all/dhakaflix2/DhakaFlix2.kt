@@ -281,7 +281,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         return results
     }
 
-    private fun isIgnored(text: String, query: String = ""): Boolean {
+    private fun isIgnored(text: String, query: String = ""):
+ Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai", "Subtitle", "Extras", "Sample", "Trailer")
         if (ignored.any { text.contains(it, ignoreCase = true) }) return true
         
@@ -368,7 +369,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     private fun fetchTmdbImage(title: String): String? {
-        val cacheKey = "tmdb_cover_${title.hashCode()}"
+        val cacheKey = "tmdb_cover_".plus(title.hashCode())
         val cached = preferences.getString(cacheKey, null)
         if (cached != null) return cached.takeIf { it.isNotEmpty() }
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
@@ -392,7 +393,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         } catch (e: Exception) { null }
     }
 
-    private fun cleanTitleForTmdb(title: String): String {
+    private fun cleanTitleForTmdb(title: String):
+ String {
         var t = title.replace(Regex("\\.(mkv|mp4|avi|flv)$"), RegexOption.IGNORE_CASE), "")
         t = t.replace(Regex("[._]"), " ")
         t = t.replace(Regex("(?i)\\s+S\\d+E\\d+.*", RegexOption.IGNORE_CASE), "")
@@ -508,8 +510,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private fun parseEpisodeNumber(text: String): Float {
         return try {
-            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\\\.?\\\\s*(\\\\d+(\\\\.{\\\\d+)?)").find(text)?.groupValues?.get(1)
-            number?.toFloatOrNull() ?: Regex("(\\\\d+(\\\\.{\\\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)
+            number?.toFloatOrNull() ?: Regex("(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
         } catch (e: Exception) { 0f }
     }
 
@@ -527,4 +529,8 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
         private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val IP_HTTP_REGEX = Regex("(\\\\d{1,3}\\\\.`
+        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\\\.{\\d{1,3}}\\\\.{\\d{1,3}}\\\\.{\\d{1,3}})\\\\s*http")
+        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
+        private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
+    }
+}
