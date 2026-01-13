@@ -189,33 +189,48 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         val res = if (query.isNotEmpty()) {
-            withTimeoutOrNull(35000) {
+            withTimeoutOrNull(40000) {
                 coroutineScope {
-                    val servers = listOf(
-                        Triple("http://172.16.50.14", "DHAKA-FLIX-14", listOf("/DHAKA-FLIX-14/")),
-                        Triple("http://172.16.50.12", "DHAKA-FLIX-12", listOf("/DHAKA-FLIX-12/", "/DHAKA-FLIX-12/TV-WEB-Series/")),
-                        Triple("http://172.16.50.9", "DHAKA-FLIX-9", listOf("/DHAKA-FLIX-9/", "/DHAKA-FLIX-9/Anime & Cartoon TV Series/")),
-                        Triple("http://172.16.50.7", "DHAKA-FLIX-7", listOf("/DHAKA-FLIX-7/"))
-                    )
+                    val searchTasks = mutableListOf<Triple<String, String, String>>()
+                    listOf(
+                        "http://172.16.50.14" to "DHAKA-FLIX-14",
+                        "http://172.16.50.12" to "DHAKA-FLIX-12",
+                        "http://172.16.50.9" to "DHAKA-FLIX-9",
+                        "http://172.16.50.7" to "DHAKA-FLIX-7"
+                    ).forEach { (baseUrl, serverName) ->
+                        val paths = mutableListOf("/$serverName/")
+                        if (serverName == "DHAKA-FLIX-12") paths.add("/$serverName/TV-WEB-Series/")
+                        if (serverName == "DHAKA-FLIX-9") paths.add("/$serverName/Anime & Cartoon TV Series/")
+                        
+                        paths.forEach { path ->
+                            searchTasks.add(Triple(baseUrl, serverName, path))
+                        }
+                    }
 
                     val queries = listOf(query, "$query movie").distinct()
-
-                    val results = servers.flatMap { (baseUrl, serverName, paths) ->
-                        paths.flatMap { path ->
-                            queries.map { q ->
-                                async(Dispatchers.IO) {
-                                    val serverResults = mutableListOf<SAnime>()
-                                    val timeout = 10000L
-                                    try {
-                                        searchOnServerWithRetry(baseUrl, serverName, q, serverResults, timeout, path)
-                                    } catch (e: Exception) {}
-                                    serverResults
-                                }
+                    val allResults = searchTasks.flatMap { task ->
+                        queries.map { q ->
+                            async(Dispatchers.IO) {
+                                val serverResults = mutableListOf<SAnime>()
+                                try {
+                                    searchOnServer(task.first, task.second, q, serverResults, 12000L, task.third)
+                                } catch (e: Exception) {}
+                                serverResults
                             }
                         }
-                    }.awaitAll().flatten().distinctBy { it.url }.take(60)
+                    }.awaitAll().flatten().distinctBy { it.url }
 
-                    AnimesPage(sortByTitle(results, query), false)
+                    val folders = allResults.filter { it.url.endsWith("/") }
+                    val files = allResults.filter { !it.url.endsWith("/") }
+                    
+                    // If we have enough folders, only show folders to keep it clean
+                    val finalResults = if (folders.size >= 5) {
+                        folders.take(100)
+                    } else {
+                        (folders + files).take(100)
+                    }
+
+                    AnimesPage(sortByTitle(finalResults, query), false)
                 }
             } ?: AnimesPage(emptyList(), false)
         } else {
@@ -223,22 +238,6 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         }
         
         return res.also { enrichAnimes(it.animes) }
-    }
-
-    private fun searchOnServerWithRetry(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, path: String, retries: Int = 1) {
-        var lastException: Exception? = null
-        for (i in 0 until retries) {
-            try {
-                searchOnServer(serverUrl, serverName, query, results, timeout, path)
-                return
-            } catch (e: Exception) {
-                lastException = e
-                if (i < retries - 1) {
-                    Thread.sleep(500)
-                }
-            }
-        }
-        lastException?.let { throw it }
     }
 
     private fun searchOnServer(serverUrl: String, serverName: String, query: String, results: MutableList<SAnime>, timeout: Long, path: String) {
@@ -300,11 +299,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 
                 synchronized(results) {
                     if (results.none { it.url == anime.url }) {
-                        if (isFolder) {
-                            results.add(0, anime) // Prioritize folders
-                        } else {
-                            results.add(anime)
-                        }
+                        results.add(anime)
                     }
                 }
             }
