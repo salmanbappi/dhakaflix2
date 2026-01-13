@@ -418,8 +418,17 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             val titleElement = element.selectFirst("h5") ?: return@mapNotNull null
             val name = titleElement.ownText().split("&nbsp;").first().trim()
             val url = titleElement.selectFirst("a")?.attr("abs:href") ?: ""
-            val quality = element.selectFirst("h5 .badge-fill")?.text()?.let { Regex("(\d+\.\d+ [GM]B|\d+ [GM]B).*", RegexOption.IGNORE_CASE).replace(it, "$1") } ?: ""
-            if (name.isNotEmpty() && url.isNotEmpty()) EpisodeData(name, url, quality, element.selectFirst("h4")?.ownText()?.trim() ?: "", element.selectFirst("h4 .badge-outline")?.text()?.trim() ?: "") else null
+            val quality = element.selectFirst("h5 .badge-fill")?.text()?.let {
+                Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*", RegexOption.IGNORE_CASE).replace(it, "$1")
+            } ?: ""
+            val episodeName = element.selectFirst("h4")?.ownText()?.trim() ?: ""
+            val size = element.selectFirst("h4 .badge-outline")?.text()?.trim() ?: ""
+            
+            if (name.isNotEmpty() && url.isNotEmpty()) {
+                EpisodeData(name, url, quality, episodeName, size)
+            } else {
+                null
+            }
         }
     }
 
