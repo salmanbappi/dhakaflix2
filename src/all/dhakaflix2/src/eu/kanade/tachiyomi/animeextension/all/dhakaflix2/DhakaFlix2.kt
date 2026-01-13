@@ -274,7 +274,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         return results
     }
 
-    private fun isIgnored(text: String, query: String = ""):
+    private fun isIgnored(text: String, query: String = ""): Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai", "Subtitle", "Extras", "Sample", "Trailer")
         if (ignored.any { text.contains(it, ignoreCase = true) }) return true
         val uploaderTags = listOf("-LOKI", "-LOKiHD", "-TDoc", "-Tuna", "-PSA", "-Pahe", "-QxR", "-YIFY", "-RARBG")
@@ -375,7 +375,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
         if (apiKey.isBlank()) return null
 
-        val cleanTitle = title.replace(Regex("(?i)Doraemon\\s+The\\s+Movie-?|\\(.*?\\)|\[.*?\\]|\\\\d{3,4}p|576p|480p|720p|1080p|HDTC|HDRip|WEB-DL|BluRay|BRRip|Hindi Dubbed|Dual Audio|MSubs|ESub|4k|UltraHD|10bit|HEVC|x264|x265"), "").replace(Regex("[-_.]"), " ").trim()
+        val cleanTitle = title.replace(Regex("(?i)Doraemon\\s+The\\s+Movie-?|\\(.*?\\)|\\[.*?\\]|\\d{3,4}p|576p|480p|720p|1080p|HDTC|HDRip|WEB-DL|BluRay|BRRip|Hindi Dubbed|Dual Audio|MSubs|ESub|4k|UltraHD|10bit|HEVC|x264|x265"), "").replace(Regex("[-_.]"), " ").trim()
         val url = "https://api.themoviedb.org/3/search/multi?api_key=$apiKey&query=$cleanTitle".toHttpUrl()
         
         return try {
