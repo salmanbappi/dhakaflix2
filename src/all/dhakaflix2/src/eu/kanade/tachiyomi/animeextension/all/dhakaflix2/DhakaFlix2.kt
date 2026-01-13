@@ -434,7 +434,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private fun getMovieMedia(document: Document): List<SEpisode> {
         val url = document.select("div.col-md-12 a.btn, .movie-buttons a, a[href*=/m/lazyload/], .download-link a").lastOrNull()?.attr("abs:href")?.replace(" ", "%20") ?: ""
-        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "").trim() ?: ""
+        val quality = document.select(".badge-wrapper .badge-fill").lastOrNull()?.text()?.replace("|", "")?.trim() ?: ""
         return listOf(SEpisode.create().apply {
             this.url = url
             this.name = "Movie"
