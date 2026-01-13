@@ -115,10 +115,11 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
             title = "Clear TMDb Cache"
             summary = "Clears all cached TMDb poster URLs"
             setOnPreferenceClickListener {
-                preferences.edit().keySet()?.filter { it.startsWith("tmdb_cover_") }?.forEach {
-                    preferences.edit().remove(it)
+                val editor = preferences.edit()
+                preferences.all.keys.filter { it.startsWith("tmdb_cover_") }.forEach {
+                    editor.remove(it)
                 }
-                preferences.edit().apply()
+                editor.apply()
                 android.widget.Toast.makeText(screen.context, "TMDb Cache Cleared", android.widget.Toast.LENGTH_SHORT).show()
                 true
             }
