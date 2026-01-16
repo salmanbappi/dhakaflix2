@@ -261,8 +261,7 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
                 val item = searchArr.getJSONObject(i)
                 val href = item.getString("href").replace('\\', '/')
                 
-                var cleanHrefForTitle = href
-                while (cleanHrefForTitle.endsWith("/")) cleanHrefForTitle = cleanHrefForTitle.dropLast(1)
+                val cleanHrefForTitle = href.trimEnd('/')
                 val rawTitle = cleanHrefForTitle.substringAfterLast("/")
                 val title = try { URLDecoder.decode(rawTitle, "UTF-8").trim() } catch (e: Exception) { rawTitle.trim() }
 
@@ -394,14 +393,14 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     private fun cleanTitleForTmdb(title: String): String {
-        var t = title.replace(Regex("\\\\.(mkv|mp4|avi|flv)$", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("[._]"), " ")
-        t = t.replace(Regex("\\\\s+S\\\\d+E\\\\d+.*", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("\\\\s+S\\\\d+.*", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("\\\\s+(?:Episode|Ep)\\\\s*\\\\d+.*", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("\\\\s+[\\\\[\\\\(]?\\\\d{4}[\\\\]\\\\)]?.*", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("\\\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*", RegexOption.IGNORE_CASE), "")
-        t = t.replace(Regex("\\\\s+-\\\\s+\\\\d+\\\\s+.*", RegexOption.IGNORE_CASE), "")
+        var t = title.replace(FILE_EXT_REGEX, "")
+        t = t.replace(SEPARATOR_REGEX, " ")
+        t = t.replace(EPISODE_S_E_REGEX, "")
+        t = t.replace(SEASON_REGEX, "")
+        t = t.replace(EPISODE_TEXT_REGEX, "")
+        t = t.replace(YEAR_REGEX, "")
+        t = t.replace(QUALITY_REGEX, "")
+        t = t.replace(DASH_REGEX, "")
         return t.trim()
     }
 
@@ -531,5 +530,14 @@ class DhakaFlix2 : ConfigurableAnimeSource, AnimeHttpSource() {
         private val IP_HTTP_REGEX = Regex("(\\\\d{1,3}\\\\.\\\\d{1,3}\\\\.\\\\d{1,3}\\\\.\\\\d{1,3})\\\\s*http")
         private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
         private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
+
+        private val FILE_EXT_REGEX = Regex("\\\\.(mkv|mp4|avi|flv)$", RegexOption.IGNORE_CASE)
+        private val SEPARATOR_REGEX = Regex("[._]")
+        private val EPISODE_S_E_REGEX = Regex("\\\\s+S\\\\d+E\\\\d+.*", RegexOption.IGNORE_CASE)
+        private val SEASON_REGEX = Regex("\\\\s+S\\\\d+.*", RegexOption.IGNORE_CASE)
+        private val EPISODE_TEXT_REGEX = Regex("\\\\s+(?:Episode|Ep)\\\\s*\\\\d+.*", RegexOption.IGNORE_CASE)
+        private val YEAR_REGEX = Regex("\\\\s+[\\\\[\\\\(]?\\\\d{4}[\\\\]\\\\)]?.*", RegexOption.IGNORE_CASE)
+        private val QUALITY_REGEX = Regex("\\\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*", RegexOption.IGNORE_CASE)
+        private val DASH_REGEX = Regex("\\\\s+-\\\\s+\\\\d+\\\\s+.*", RegexOption.IGNORE_CASE)
     }
 }
