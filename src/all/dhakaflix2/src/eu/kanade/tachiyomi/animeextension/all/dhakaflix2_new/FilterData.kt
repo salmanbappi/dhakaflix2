@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.animeextension.all.dhakaflix2
+package eu.kanade.tachiyomi.animeextension.all.dhakaflix2_new
 
 object FilterData {
     val CATEGORIES = arrayOf(

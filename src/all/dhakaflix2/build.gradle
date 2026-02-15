@@ -1,6 +1,6 @@
 ext {
     extName = 'DhakaFlix 2'
-    extClass = '.DhakaFlixFactory'
+    extClass = '.all.dhakaflix2_new.DhakaFlixFactory'
     author = '@salmanbappi'
     baseUrl = 'http://172.16.50.9'
     extVersionCode = 1147
@@ -9,7 +9,7 @@ ext {
 apply from: "$rootDir/common.gradle"
 
 android {
-    namespace = "eu.kanade.tachiyomi.animeextension.all.dhakaflix2"
+    namespace = "eu.kanade.tachiyomi.animeextension.all.dhakaflix2_new"
     defaultConfig {
         applicationId = "eu.kanade.tachiyomi.animeextension.all.dhakaflix2_new"
     }
