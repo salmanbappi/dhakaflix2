@@ -22,10 +22,12 @@ object Filters {
         val categoryFilter = filters[1] as DhakaFlixSelect
         val yearFilter = filters[2] as DhakaFlixSelect
         val alphabetFilter = filters[3] as DhakaFlixSelect
+        val langFilter = filters[4] as DhakaFlixSelect
 
         val category = categoryFilter.values[categoryFilter.state]
         val year = yearFilter.values[yearFilter.state]
         val alphabet = alphabetFilter.values[alphabetFilter.state]
+        val lang = langFilter.values[langFilter.state]
 
         var baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
         var path = "Hindi Movies"
@@ -62,16 +64,22 @@ object Filters {
             "Foreign Language Movies" -> {
                 baseUrl = "http://172.16.50.7/DHAKA-FLIX-7"
                 path = "Foreign Language Movies"
+                if (lang != "Any") {
+                    return "$baseUrl/$path/$lang/"
+                }
             }
             "TV Series" -> {
                 baseUrl = "http://172.16.50.12/DHAKA-FLIX-12"
-                val subPath = when (alphabet) {
-                    "0-9" -> "TV Series \u2605  0  \u2014  9"
-                    "G-M / M-R" -> "TV Series \u2666  M  \u2014  R"
-                    "N-S / S-Z" -> "TV Series \u2666  S  \u2014  Z"
-                    else -> "TV Series \u2665  A  \u2014  L" 
+                if (alphabet != "Any") {
+                    val subPath = when (alphabet) {
+                        "0-9" -> "TV Series \u2605  0  \u2014  9"
+                        "G-M / M-R" -> "TV Series \u2666  M  \u2014  R"
+                        "N-S / S-Z" -> "TV Series \u2666  S  \u2014  Z"
+                        else -> "TV Series \u2665  A  \u2014  L" 
+                    }
+                    return "$baseUrl/TV-WEB-Series/$subPath/"
                 }
-                path = "TV-WEB-Series/$subPath"
+                path = "TV-WEB-Series"
             }
             "Korean TV & Web Series" -> {
                 baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
@@ -79,14 +87,17 @@ object Filters {
             }
             "Anime-TV Series" -> {
                 baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
-                val subPath = when (alphabet) {
-                    "0-9" -> "Anime-TV Series \u2605  0  \u2014  9"
-                    "G-M / M-R" -> "Anime-TV Series \u2665  G  \u2014  M"
-                    "N-S / S-Z" -> "Anime-TV Series \u2666  N  \u2014  S"
-                    "T-Z" -> "Anime-TV Series \u2666  T  \u2014  Z"
-                    else -> "Anime-TV Series \u2665  A  \u2014  F"
+                if (alphabet != "Any") {
+                    val subPath = when (alphabet) {
+                        "0-9" -> "Anime-TV Series \u2605  0  \u2014  9"
+                        "G-M / M-R" -> "Anime-TV Series \u2665  G  \u2014  M"
+                        "N-S / S-Z" -> "Anime-TV Series \u2666  N  \u2014  S"
+                        "T-Z" -> "Anime-TV Series \u2666  T  \u2014  Z"
+                        else -> "Anime-TV Series \u2665  A  \u2014  F"
+                    }
+                    return "$baseUrl/Anime & Cartoon TV Series/$subPath/"
                 }
-                path = "Anime & Cartoon TV Series/$subPath"
+                path = "Anime & Cartoon TV Series"
             }
             "Documentary" -> {
                 baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
@@ -111,29 +122,34 @@ object Filters {
             "Trending Movies" -> {
                 baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
                 path = "Hindi Movies/(2026)"
-            }
-            else -> {
-                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
-                path = category
+                return "$baseUrl/$path/"
             }
         }
 
-        // Append year if applicable
+        if (alphabet != "Any") {
+            val alphaPath = when (alphabet) {
+                "0-9" -> "0-9"
+                "A-F / A-L" -> "A-F"
+                "G-M / M-R" -> "G-M"
+                "N-S / S-Z" -> "N-S"
+                "T-Z" -> "T-Z"
+                else -> alphabet
+            }
+            return "$baseUrl/$path/$alphaPath/"
+        }
+
         if (year != "Any") {
             val yearPath = when {
-                category == "English Movies (1080p)" -> "($year) 1080p"
+                category == "English Movies (1080p)" -> {
+                    if (year == "(2009) & Before") "%282009%29%20%26%20Before"
+                    else "%28$year%29%201080p"
+                }
                 category == "South Indian Movies" || category == "South Hindi Dubbed" -> {
                     if (year == "(2009) & Before") "2000 & Before" else year
                 }
-                category == "English Movies" && year == "(2009) & Before" -> "(1960-1994)"
                 else -> "($year)"
             }
-            
-            // Server 7 check for 2026 (not supported yet)
-            val isServer7 = baseUrl.contains("50.7")
-            if (!(isServer7 && year == "2026")) {
-                path += "/$yearPath"
-            }
+            return "$baseUrl/$path/$yearPath/"
         }
 
         return "$baseUrl/$path/"
