@@ -447,7 +447,7 @@ class DhakaFlix2(
             } ?: ""
             
             if (thumbUrl.isEmpty()) {
-                thumbUrl = document.selectFirst("a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
+                thumbUrl = document.selectFirst("a[href~=(?i)\\\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
             }
             
             if (thumbUrl.isEmpty() && response.request.url.toString().endsWith("/")) {
@@ -483,7 +483,7 @@ class DhakaFlix2(
             val name = rawName.split("&nbsp;", "\u00A0").first().trim()
             val url = titleElement.selectFirst("a")?.attr("abs:href") ?: ""
             val q = element.selectFirst("h5 .badge-fill")?.text()?.let {
-                Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*", RegexOption.IGNORE_CASE).replace(it, "$1")
+                Regex("(\\\\d+\\\\.\\\\d+ [GM]B|\\\\d+ [GM]B).*", RegexOption.IGNORE_CASE).replace(it, "$1")
             } ?: ""
             val episodeName = element.selectFirst("h4")?.ownText()?.trim() ?: ""
             val size = element.selectFirst("h4 .badge-outline")?.text()?.trim() ?: ""
@@ -552,8 +552,8 @@ class DhakaFlix2(
 
     private fun parseEpisodeNumber(text: String): Float {
         return try {
-            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\s*(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)
-            number?.toFloatOrNull() ?: Regex("(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\\\.?\\\\s*(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)
+            number?.toFloatOrNull() ?: Regex("(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
         } catch (e: Exception) { 0f }
     }
 
@@ -568,22 +568,20 @@ class DhakaFlix2(
 
     data class EpisodeData(val seasonEpisode: String, val videoUrl: String, val quality: String, val episodeName: String, val size: String)
 
-    companion object {
-        private const val PREF_TMDB_API_KEY = "tmdb_api_key"
-        private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.{\\d{1,3}}\\.{\\d{1,3}}\\.{\\d{1,3}})\\s*http")
-        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
-        private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
-
-        private val FILE_EXT_REGEX = Regex("\\.(mkv|mp4|avi|flv)", RegexOption.IGNORE_CASE)
-        private val SEPARATOR_REGEX = Regex("[._]")
-        private val EPISODE_S_E_REGEX = Regex("\\s+S\\d+E\\d+.*", RegexOption.IGNORE_CASE)
-        private val SEASON_REGEX = Regex("\\s+S\\d+.*", RegexOption.IGNORE_CASE)
-        private val EPISODE_TEXT_REGEX = Regex("\\s+(?:Episode|Ep)\\s*\\d+.*", RegexOption.IGNORE_CASE)
-        private val YEAR_REGEX = Regex("\\s+[\\[\\(\\]?\\d{4}[\\)\\]]?.*", RegexOption.IGNORE_CASE)
-        private val QUALITY_REGEX = Regex("\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*
-", RegexOption.IGNORE_CASE)
-        private val DASH_REGEX = Regex("\\s+-\\s+\\d+\\s+.*
-", RegexOption.IGNORE_CASE)
-    }
-}
+            companion object {
+                private const val PREF_TMDB_API_KEY = "tmdb_api_key"
+                private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
+                private val IP_HTTP_REGEX = Regex("(\\\\d{1,3}\\\\.\\\\d{1,3}\\\\.\\\\d{1,3}\\\\.\\\\d{1,3})\\\\s*http")
+                private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
+                private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
+        
+                private val FILE_EXT_REGEX = Regex("\\\\.(mkv|mp4|avi|flv)$", RegexOption.IGNORE_CASE)
+                private val SEPARATOR_REGEX = Regex("[._]")
+                private val EPISODE_S_E_REGEX = Regex("\\\\s+S\\\\d+E\\\\d+.*", RegexOption.IGNORE_CASE)
+                private val SEASON_REGEX = Regex("\\\\s+S\\\\d+.*", RegexOption.IGNORE_CASE)
+                private val EPISODE_TEXT_REGEX = Regex("\\\\s+(?:Episode|Ep)\\\\s*\\\\d+.*", RegexOption.IGNORE_CASE)
+                private val YEAR_REGEX = Regex("\\\\s+[\\\\[\\\\(]?\\\\d{4}[\\\\]\\\\)]?.*", RegexOption.IGNORE_CASE)
+                private val QUALITY_REGEX = Regex("\\\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*", RegexOption.IGNORE_CASE)
+                private val DASH_REGEX = Regex("\\\\s+-\\\\s+\\\\d+\\\\s+.*", RegexOption.IGNORE_CASE)
+            }
+        }
