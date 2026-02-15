@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.animeextension.all.dhakaflix2_new
+package eu.kanade.tachiyomi.animeextension.all.dhakaflix2
 
 import android.app.Application
 import android.content.SharedPreferences
