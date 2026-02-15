@@ -42,7 +42,7 @@ import java.util.concurrent.TimeUnit
 class DhakaFlix2(
     override val name: String = "DhakaFlix 2",
     override val baseUrl: String = "http://172.16.50.9",
-    override val id: Long = 5181466391484419841L
+    override val id: Long = 5181466391484419943L
 ) : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override val lang = "all"
@@ -54,27 +54,6 @@ class DhakaFlix2(
 
     private val searchCache = mutableMapOf<String, List<SAnime>>()
     private val cacheTime = mutableMapOf<String, Long>()
-
-    override val client: OkHttpClient = super.client.newBuilder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(90, TimeUnit.SECONDS)
-        .connectionPool(okhttp3.ConnectionPool(20, 5, TimeUnit.MINUTES))
-        .addInterceptor {
-            val original = it.request()
-            val requestUrl = original.url
-            val referer = "${requestUrl.scheme}://${requestUrl.host}/"
-            val newRequest = original.newBuilder()
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .header("Accept", "*/*")
-                .header("Referer", referer)
-                .build()
-            it.proceed(newRequest)
-        }
-        .dispatcher(okhttp3.Dispatcher().apply {
-            maxRequests = 60
-            maxRequestsPerHost = 20
-        })
-        .build()
 
     override fun headersBuilder() = super.headersBuilder()
         .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
