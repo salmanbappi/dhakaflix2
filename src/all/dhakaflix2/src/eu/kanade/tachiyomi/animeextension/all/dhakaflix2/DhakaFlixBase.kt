@@ -291,6 +291,93 @@ abstract class DhakaFlixBase(
         return fixUrl("$url$suffix")
     }
 
+    override fun popularAnimeParse(response: Response): AnimesPage {
+        val document = response.asJsoup()
+        val cards = document.select("div.card")
+        val animeList = if (cards.isNotEmpty()) {
+            cards.mapNotNull { card ->
+                val link = card.selectFirst("h5 a") ?: return@mapNotNull null
+                SAnime.create().apply {
+                    title = link.text().trim()
+                    url = fixUrl(link.attr("abs:href"))
+                    
+                    val thumbElement = card.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
+                    val thumbUrl = thumbElement?.let { 
+                        it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
+                    } ?: ""
+                    thumbnail_url = if (thumbUrl.isNotEmpty()) fixUrl(thumbUrl) else ""
+                }
+            }
+        } else {
+            document.select("a").mapNotNull { element ->
+                val titleStr = element.text().trim()
+                val href = element.attr("abs:href")
+                if (titleStr.isNotEmpty() && !isIgnored(titleStr) && !href.contains("?") && !href.endsWith("../")) {
+                    SAnime.create().apply {
+                        title = if (titleStr.endsWith("/")) titleStr.dropLast(1) else titleStr
+                        url = fixUrl(href)
+                        thumbnail_url = if (url.endsWith("/")) getFolderThumb(url) else ""
+                    }
+                } else null
+            }
+        }
+        return AnimesPage(animeList, false)
+    }
+
+    override fun latestUpdatesRequest(page: Int) = popularAnimeRequest(page)
+    override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
+
+    override fun searchAnimeParse(response: Response) = popularAnimeParse(response)
+
+    override suspend fun getAnimeDetails(anime: SAnime): SAnime {
+        val useTmdb = preferences.getBoolean(PREF_USE_TMDB_COVERS, false)
+        if (useTmdb) {
+            try {
+                fetchTmdbImage(anime.title)?.let { anime.thumbnail_url = it }
+            } catch (e: Exception) {}
+        }
+        return anime
+    }
+
+    private fun fetchTmdbImage(title: String): String? {
+        val cacheKey = "tmdb_cover_".plus(title.hashCode())
+        val cached = preferences.getString(cacheKey, null)
+        if (cached != null) return cached.takeIf { it.isNotEmpty() }
+        val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
+        if (apiKey.isBlank()) return null
+
+        val cleanTitle = cleanTitleForTmdb(title)
+        val url = "https://api.themoviedb.org/3/search/multi?api_key=$apiKey&query=$cleanTitle".toHttpUrl()
+        
+        return try {
+            client.newCall(Request.Builder().url(url).build()).execute().use {
+                val results = JSONObject(it.body?.string()).optJSONArray("results")
+                if (results != null && results.length() > 0) {
+                    val path = results.getJSONObject(0).optString("poster_path")
+                    if (path.isNotEmpty() && path != "null") {
+                        val thumb = "https://image.tmdb.org/t/p/w500$path"
+                        preferences.edit().putString(cacheKey, thumb).apply()
+                        thumb
+                    } else null
+                } else null
+            }
+        } catch (e: Exception) { null }
+    }
+
+    private fun cleanTitleForTmdb(title: String): String {
+        var t = title.replace(FILE_EXT_REGEX, "")
+        t = t.replace(SEPARATOR_REGEX, " ")
+        t = t.replace(EPISODE_S_E_REGEX, "")
+        t = t.replace(SEASON_REGEX, "")
+        t = t.replace(EPISODE_TEXT_REGEX, "")
+        t = t.replace(YEAR_REGEX, "")
+        t = t.replace(QUALITY_REGEX, "")
+        t = t.replace(DASH_REGEX, "")
+        return t.trim()
+    }
+
+    override fun animeDetailsRequest(anime: SAnime): Request = GET(fixUrl(anime.url), headers)
+
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
         val html = document.select("script").html()
@@ -307,7 +394,7 @@ abstract class DhakaFlixBase(
             } ?: ""
             
             if (thumbUrl.isEmpty()) {
-                thumbUrl = document.selectFirst("a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
+                thumbUrl = document.selectFirst("a[href~=(?i)\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
             }
             
             if (thumbUrl.isEmpty() && response.request.url.toString().endsWith("/")) {
@@ -412,8 +499,8 @@ abstract class DhakaFlixBase(
 
     private fun parseEpisodeNumber(text: String): Float {
         return try {
-            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)
-            number?.toFloatOrNull() ?: Regex("(\\\\d+(\\\\.\\\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)
+            number?.toFloatOrNull() ?: Regex("(\\d+(\\.\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
         } catch (e: Exception) { 0f }
     }
 
@@ -431,17 +518,17 @@ abstract class DhakaFlixBase(
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
         private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val IP_HTTP_REGEX = Regex("(\\\\d{1,3}\\\\.`\\d{1,3}\\\\.`\\d{1,3}\\\\.`\\d{1,3}`)\\\\s*http")
+        private val IP_HTTP_REGEX = Regex("(\\\\d{1,3}\\\\.`\\\\d{1,3}\\\\.`\\\\d{1,3}\\\\.`\\\\d{1,3}`)\\\\s*http")
         private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
         private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
 
-        private val FILE_EXT_REGEX = Regex("\\.(mkv|mp4|avi|flv)\", RegexOption.IGNORE_CASE)
+        private val FILE_EXT_REGEX = Regex("\\.(mkv|mp4|avi|flv)", RegexOption.IGNORE_CASE)
         private val SEPARATOR_REGEX = Regex("[._]")
         private val EPISODE_S_E_REGEX = Regex("\\s+S\\d+E\\d+.*", RegexOption.IGNORE_CASE)
         private val SEASON_REGEX = Regex("\\s+S\\d+.*", RegexOption.IGNORE_CASE)
         private val EPISODE_TEXT_REGEX = Regex("\\s+(?:Episode|Ep)\\s*\\d+.*", RegexOption.IGNORE_CASE)
-        private val YEAR_REGEX = Regex("\\s+[\\\\[\\\(]?\\d{4}[\\\\]\\\\)?.*", RegexOption.IGNORE_CASE)
-        private val QUALITY_REGEX = Regex("\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*", RegexOption.IGNORE_CASE)
-        private val DASH_REGEX = Regex("\\s+-\\s+\\d+\\s+.*", RegexOption.IGNORE_CASE)
+        private val YEAR_REGEX = Regex("\\s+[\\\\[\\\\(\\]?\\d{4}[\\\\]\\\\)?.*", RegexOption.IGNORE_CASE)
+        private val QUALITY_REGEX = Regex("\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*")
+        private val DASH_REGEX = Regex("\\s+-\\s+\\d+\\s+.*")
     }
 }
