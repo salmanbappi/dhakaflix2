@@ -40,8 +40,6 @@ import uy.kohesive.injekt.api.get
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
-// ---
-// Abstract Base Class ---
 abstract class DhakaFlixBase(
     override val name: String,
     override val baseUrl: String,
@@ -82,8 +80,7 @@ abstract class DhakaFlixBase(
             title = "Clear TMDb Cache"
             summary = "Clears all cached TMDb poster URLs"
             setDefaultValue(false)
-            setOnPreferenceChangeListener {
-                _, newValue ->
+            setOnPreferenceChangeListener { _, newValue ->
                 if (newValue as Boolean) {
                     val editor = preferences.edit()
                     preferences.all.keys.filter { it.startsWith("tmdb_cover_") }.forEach { editor.remove(it) }
@@ -132,6 +129,43 @@ abstract class DhakaFlixBase(
         }
     }
 
+    private fun fetchTmdbImage(title: String): String? {
+        val cacheKey = "tmdb_cover_".plus(title.hashCode())
+        val cached = preferences.getString(cacheKey, null)
+        if (cached != null) return cached.takeIf { it.isNotEmpty() }
+        val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
+        if (apiKey.isBlank()) return null
+
+        val cleanTitle = cleanTitleForTmdb(title)
+        val url = "https://api.themoviedb.org/3/search/multi?api_key=$apiKey&query=$cleanTitle".toHttpUrl()
+        
+        return try {
+            client.newCall(Request.Builder().url(url).build()).execute().use {
+                val results = JSONObject(it.body?.string()).optJSONArray("results")
+                if (results != null && results.length() > 0) {
+                    val path = results.getJSONObject(0).optString("poster_path")
+                    if (path.isNotEmpty() && path != "null") {
+                        val thumb = "https://image.tmdb.org/t/p/w500$path"
+                        preferences.edit().putString(cacheKey, thumb).apply()
+                        thumb
+                    } else null
+                } else null
+            }
+        } catch (e: Exception) { null }
+    }
+
+    private fun cleanTitleForTmdb(title: String): String {
+        var t = title.replace(FILE_EXT_REGEX, "")
+        t = t.replace(SEPARATOR_REGEX, " ")
+        t = t.replace(EPISODE_S_E_REGEX, "")
+        t = t.replace(SEASON_REGEX, "")
+        t = t.replace(EPISODE_TEXT_REGEX, "")
+        t = t.replace(YEAR_REGEX, "")
+        t = t.replace(QUALITY_REGEX, "")
+        t = t.replace(DASH_REGEX, "")
+        return t.trim()
+    }
+
     override suspend fun getPopularAnime(page: Int): AnimesPage {
         val response = client.newCall(popularAnimeRequest(page)).execute()
         return popularAnimeParse(response).also { enrichAnimes(it.animes) }
@@ -152,7 +186,6 @@ abstract class DhakaFlixBase(
 
         val results = withContext(Dispatchers.IO) {
             val paths = getSearchPaths()
-            
             val deferredResults = paths.map { path ->
                 async {
                     try {
@@ -162,10 +195,8 @@ abstract class DhakaFlixBase(
                     }
                 }
             }
-            
             val allAnime = deferredResults.awaitAll().flatten().distinctBy { it.url }
-            val collapsedAnime = collapseResults(allAnime)
-            sortByTitle(collapsedAnime, query)
+            sortByTitle(collapseResults(allAnime), query)
         }
 
         if (results.isNotEmpty()) {
@@ -181,7 +212,6 @@ abstract class DhakaFlixBase(
     private fun collapseResults(list: List<SAnime>): List<SAnime> {
         val folders = list.filter { it.url.endsWith("/") }.map { it.url }.toSet()
         if (folders.isEmpty()) return list
-        
         return list.filter {
             if (it.url.endsWith("/")) return@filter true
             folders.none { folderUrl -> it.url.startsWith(folderUrl) }
@@ -230,7 +260,6 @@ abstract class DhakaFlixBase(
             for (i in 0 until searchArr.length()) {
                 val item = searchArr.getJSONObject(i)
                 val href = item.getString("href").replace('\\', '/')
-                
                 val cleanHrefForTitle = href.trimEnd('/')
                 val rawTitle = cleanHrefForTitle.substringAfterLast("/")
                 val title = try { URLDecoder.decode(rawTitle, "UTF-8").trim() } catch (e: Exception) { rawTitle.trim() }
@@ -253,7 +282,6 @@ abstract class DhakaFlixBase(
     protected fun isIgnored(text: String, query: String = ""): Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai")
         if (ignored.any { text.contains(it, ignoreCase = true) }) return true
-        
         val uploaderTags = listOf("-LOKI", "-LOKiHD", "-TDoc", "-Tuna", "-PSA", "-Pahe", "-QxR", "-YIFY", "-RARBG")
         if (uploaderTags.any { text.endsWith(it, ignoreCase = true) || text.contains("$it.") || text.contains("$it ") }) {
             val cleanQuery = query.trim().removePrefix("-")
@@ -282,8 +310,8 @@ abstract class DhakaFlixBase(
         for (i in 0 until n1 - 1) bigrams1.add(s1.substring(i, i + 2))
         var intersection = 0
         for (i in 0 until n2 - 1) {
-            val bigram = s2.substring(i, i + 2)
-            if (bigrams1.contains(bigram)) intersection++
+            val biggram = s2.substring(i, i + 2)
+            if (bigrams1.contains(biggram)) intersection++
         }
         return (2.0 * intersection) / (n1 + n2 - 2).coerceAtLeast(1)
     }
@@ -294,6 +322,54 @@ abstract class DhakaFlixBase(
         return fixUrl("$url$suffix")
     }
 
+    override fun popularAnimeParse(response: Response): AnimesPage {
+        val document = response.asJsoup()
+        val cards = document.select("div.card")
+        val animeList = if (cards.isNotEmpty()) {
+            cards.mapNotNull { card ->
+                val link = card.selectFirst("h5 a") ?: return@mapNotNull null
+                SAnime.create().apply {
+                    title = link.text().trim()
+                    url = fixUrl(link.attr("abs:href"))
+                    val thumbElement = card.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
+                    val thumbUrl = thumbElement?.let { 
+                        it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
+                    } ?: ""
+                    thumbnail_url = if (thumbUrl.isNotEmpty()) fixUrl(thumbUrl) else ""
+                }
+            }
+        } else {
+            document.select("a").mapNotNull { element ->
+                val titleStr = element.text().trim()
+                val href = element.attr("abs:href")
+                if (titleStr.isNotEmpty() && !isIgnored(titleStr) && !href.contains("?") && !href.endsWith("../")) {
+                    SAnime.create().apply {
+                        title = if (titleStr.endsWith("/")) titleStr.dropLast(1) else titleStr
+                        url = fixUrl(href)
+                        thumbnail_url = if (url.endsWith("/")) getFolderThumb(url) else ""
+                    }
+                } else null
+            }
+        }
+        return AnimesPage(animeList, false)
+    }
+
+    override fun latestUpdatesRequest(page: Int) = popularAnimeRequest(page)
+    override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
+    override fun searchAnimeParse(response: Response) = popularAnimeParse(response)
+
+    override suspend fun getAnimeDetails(anime: SAnime): SAnime {
+        val useTmdb = preferences.getBoolean(PREF_USE_TMDB_COVERS, false)
+        if (useTmdb) {
+            try {
+                fetchTmdbImage(anime.title)?.let { anime.thumbnail_url = it }
+            } catch (e: Exception) {}
+        }
+        return anime
+    }
+
+    override fun animeDetailsRequest(anime: SAnime): Request = GET(fixUrl(anime.url), headers)
+
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
         val html = document.select("script").html()
@@ -303,20 +379,16 @@ abstract class DhakaFlixBase(
             status = if (isMovie) SAnime.COMPLETED else SAnime.ONGOING
             genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
             description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
-            
             val thumbElement = document.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
             var thumbUrl = thumbElement?.let { 
                 it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
             } ?: ""
-            
             if (thumbUrl.isEmpty()) {
                 thumbUrl = document.selectFirst("a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
             }
-            
             if (thumbUrl.isEmpty() && response.request.url.toString().endsWith("/")) {
                 thumbUrl = getFolderThumb(response.request.url.toString())
             }
-
             thumbnail_url = if (thumbUrl.isNotEmpty()) fixUrl(thumbUrl) else ""
         }
     }
@@ -325,7 +397,6 @@ abstract class DhakaFlixBase(
         withTimeoutOrNull(45000) {
             val document = client.newCall(GET(fixUrl(anime.url), headers)).execute().asJsoup()
             val html = document.select("script").html()
-            
             val episodes = when {
                 html.contains("/m/lazyload/") -> getMovieMedia(document)
                 html.contains("/s/lazyload/") -> {
@@ -346,7 +417,7 @@ abstract class DhakaFlixBase(
             val name = rawName.split("&nbsp;", "\u00A0").first().trim()
             val url = titleElement.selectFirst("a")?.attr("abs:href") ?: ""
             val q = element.selectFirst("h5 .badge-fill")?.text()?.let {
-                Regex("""(\d+\.\d+ [GM]B|\d+ [GM]B).*""", RegexOption.IGNORE_CASE).replace(it, "$1")
+                Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*", RegexOption.IGNORE_CASE).replace(it, "$1")
             } ?: ""
             val episodeName = element.selectFirst("h4")?.ownText()?.trim() ?: ""
             val size = element.selectFirst("h4 .badge-outline")?.text()?.trim() ?: ""
@@ -374,7 +445,6 @@ abstract class DhakaFlixBase(
         val currentHttpUrl = doc.location().toHttpUrlOrNull() ?: return emptyList()
         val fileEpisodes = mutableListOf<SEpisode>()
         val subDirs = mutableListOf<String>()
-
         doc.select("a").forEach { element ->
             val href = element.attr("href")
             val text = element.text().trim()
@@ -388,9 +458,7 @@ abstract class DhakaFlixBase(
                 })
             } else if (href.endsWith("/") || absUrl.endsWith("/")) subDirs.add(absUrl)
         }
-        
         if (fileEpisodes.isNotEmpty()) return fileEpisodes.sortedBy { it.name }.reversed()
-
         val subDirEpisodes = coroutineScope {
             subDirs.map { async(Dispatchers.IO) { semaphore.withPermit { parseDir(it, depth - 1) } } }.awaitAll().flatten()
         }
@@ -415,8 +483,8 @@ abstract class DhakaFlixBase(
 
     private fun parseEpisodeNumber(text: String): Float {
         return try {
-            val number = Regex("""(?i)(?:Episode|Ep|E|Vol)\.?\s*(\d+(\.\d+)?)""", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)
-            number?.toFloatOrNull() ?: Regex("""(\d+(\.\d+)?)""", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\.?\s*(\d+(\.\d+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)
+            number?.toFloatOrNull() ?: Regex("(\d+(\.\d+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
         } catch (e: Exception) { 0f }
     }
 
@@ -434,23 +502,19 @@ abstract class DhakaFlixBase(
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
         private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val IP_HTTP_REGEX = Regex("""(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*http""")
-        private val DOUBLE_PROTOCOL_REGEX = Regex("""http(s)?://http(s)?://""")
-        private val MULTI_SLASH_REGEX = Regex("""(?<!:)/{2,}""")
-
-        private val FILE_EXT_REGEX = Regex("""\.(mkv|mp4|avi|flv)$""", RegexOption.IGNORE_CASE)
-        private val SEPARATOR_REGEX = Regex("""[._]""", RegexOption.IGNORE_CASE)
-        private val EPISODE_S_E_REGEX = Regex("""\s+S\d+E\d+.*""", RegexOption.IGNORE_CASE)
-        private val SEASON_REGEX = Regex("""\s+S\d+.*""", RegexOption.IGNORE_CASE)
-        private val EPISODE_TEXT_REGEX = Regex("""\s+(?:Episode|Ep)\s*\d+.*""", RegexOption.IGNORE_CASE)
-        private val YEAR_REGEX = Regex("""\s+[\\\[\(]?\d{4}[\\\]\)]?.*""", RegexOption.IGNORE_CASE)
-        private val QUALITY_REGEX = Regex("""\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*""", RegexOption.IGNORE_CASE)
-        private val DASH_REGEX = Regex("""\s+-\s+\d+\s+.*""", RegexOption.IGNORE_CASE)
+        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http")
+        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
+        private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
+        private val FILE_EXT_REGEX = Regex("\\.(mkv|mp4|avi|flv)\", RegexOption.IGNORE_CASE)
+        private val SEPARATOR_REGEX = Regex("[._]", RegexOption.IGNORE_CASE)
+        private val EPISODE_S_E_REGEX = Regex("\\s+S\\d+E\\d+.*", RegexOption.IGNORE_CASE)
+        private val SEASON_REGEX = Regex("\\s+S\\d+.*", RegexOption.IGNORE_CASE)
+        private val EPISODE_TEXT_REGEX = Regex("\\s+(?:Episode|Ep)\\s*\\d+.*", RegexOption.IGNORE_CASE)
+        private val YEAR_REGEX = Regex("\\s+[\\\\[\\(]?\\d{4}[\\\\]\\)]?.*", RegexOption.IGNORE_CASE)
+        private val QUALITY_REGEX = Regex("\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*", RegexOption.IGNORE_CASE)
+        private val DASH_REGEX = Regex("\\s+-\\s+\\d+\\s+.*", RegexOption.IGNORE_CASE)
     }
 }
-
-// ---
-// Specific Server Implementations ---
 
 class DhakaFlixHindi : DhakaFlixBase(
     "DhakaFlix (Hindi & South Indian)",
