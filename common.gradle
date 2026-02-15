@@ -41,7 +41,7 @@ android {
         }
         assert extClass.startsWith(".")
         manifestPlaceholders = [
-                appName : "Aniyomi: $extName (@salmanbappi)",
+                appName : "Aniyomi: $extName",
                 extClass: extClass,
                 nsfw    : project.ext.find("isNsfw") ? 1 : 0,
                 author  : "@salmanbappi",
