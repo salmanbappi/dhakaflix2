@@ -40,6 +40,23 @@ import uy.kohesive.injekt.api.get
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
+// --- Constants ---
+private const val PREF_TMDB_API_KEY = "tmdb_api_key"
+private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
+
+private val IP_HTTP_REGEX = Regex(\"(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http\")
+private val DOUBLE_PROTOCOL_REGEX = Regex(\"http(s)?://http(s)?://\")
+private val MULTI_SLASH_REGEX = Regex(\"(?<!:)/{2,}\")
+
+private val FILE_EXT_REGEX = Regex(\"\\.(mkv|mp4|avi|flv)$", RegexOption.IGNORE_CASE)
+private val SEPARATOR_REGEX = Regex(\"[._]", RegexOption.IGNORE_CASE)
+private val EPISODE_S_E_REGEX = Regex(\"\\s+S\\d+E\\d+.*\", RegexOption.IGNORE_CASE)
+private val SEASON_REGEX = Regex(\"\\s+S\\d+.*\", RegexOption.IGNORE_CASE)
+private val EPISODE_TEXT_REGEX = Regex(\"\\s+(?:Episode|Ep)\\s*\\d+.*\", RegexOption.IGNORE_CASE)
+private val YEAR_REGEX = Regex(\"\\s+[\\[\\(\\)?\\d{4}[\\]\\)?.*\", RegexOption.IGNORE_CASE)
+private val QUALITY_REGEX = Regex(\"\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*\", RegexOption.IGNORE_CASE)
+private val DASH_REGEX = Regex(\"\\s+-\\s+\\d+\\s+.*\", RegexOption.IGNORE_CASE)
+
 class DhakaFlix2(
     override val name: String,
     override val baseUrl: String,
@@ -81,8 +98,7 @@ class DhakaFlix2(
             title = "Clear TMDb Cache"
             summary = "Clears all cached TMDb poster URLs"
             setDefaultValue(false)
-            setOnPreferenceChangeListener {
-                _, newValue ->
+            setOnPreferenceChangeListener { _, newValue ->
                 if (newValue as Boolean) {
                     val editor = preferences.edit()
                     preferences.all.keys.filter { it.startsWith("tmdb_cover_") }.forEach { editor.remove(it) }
@@ -197,16 +213,16 @@ class DhakaFlix2(
                 paths.add("/$serverPath/Hindi Movies/")
             }
             
-            val deferredResults = paths.map {
+            val deferredResults = paths.map { path ->
                 async {
                     try {
-                        searchSingleServer(baseUrl, serverPath, it, query)
+                        searchSingleServer(baseUrl, serverPath, path, query)
                     } catch (e: Exception) {
                         emptyList<SAnime>()
                     }
                 }
-            }.awaitAll()
-            val allAnime = deferredResults.flatten().distinctBy { it.url }
+            }
+            val allAnime = deferredResults.awaitAll().flatten().distinctBy { it.url }
             sortByTitle(collapseResults(allAnime), query)
         }
 
@@ -319,8 +335,8 @@ class DhakaFlix2(
         for (i in 0 until n1 - 1) bigrams1.add(s1.substring(i, i + 2))
         var intersection = 0
         for (i in 0 until n2 - 1) {
-            val biggram = s2.substring(i, i + 2)
-            if (bigrams1.contains(biggram)) intersection++
+            val bigram = s2.substring(i, i + 2)
+            if (bigrams1.contains(bigram)) intersection++
         }
         return (2.0 * intersection) / (n1 + n2 - 2).coerceAtLeast(1)
     }
@@ -453,7 +469,7 @@ class DhakaFlix2(
             val name = rawName.split("&nbsp;", "\u00A0").first().trim()
             val url = titleElement.selectFirst("a")?.attr("abs:href") ?: ""
             val q = element.selectFirst("h5 .badge-fill")?.text()?.let {
-                Regex("(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*", RegexOption.IGNORE_CASE).replace(it, "$1")
+                Regex(\"(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*\").replace(it, "$1")
             } ?: ""
             val episodeName = element.selectFirst("h4")?.ownText()?.trim() ?: ""
             val size = element.selectFirst("h4 .badge-outline")?.text()?.trim() ?: ""
@@ -481,9 +497,9 @@ class DhakaFlix2(
         val currentHttpUrl = doc.location().toHttpUrlOrNull() ?: return emptyList()
         val fileEpisodes = mutableListOf<SEpisode>()
         val subDirs = mutableListOf<String>()
-        doc.select("a").forEach {
-            val href = it.attr("href")
-            val text = it.text().trim()
+        doc.select("a").forEach { element ->
+            val href = element.attr("href")
+            val text = element.text().trim()
             if (href.contains("..") || href.startsWith("?") || isIgnored(text)) return@forEach
             val absUrl = currentHttpUrl.resolve(href)?.toString() ?: return@forEach
             if (isVideoFile(href)) {
@@ -519,8 +535,8 @@ class DhakaFlix2(
 
     private fun parseEpisodeNumber(text: String): Float {
         return try {
-            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\d+(\\.\\d+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)
-            number?.toFloatOrNull() ?: Regex("(\\d+(\\.\\d+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+            val number = Regex(\"((?i)(?:Episode|Ep|E|Vol))\\.?\\s*(\\d+(\\.\\d+)?)\").find(text)?.groupValues?.get(1)
+            number?.toFloatOrNull() ?: Regex(\"(\\d+(\\.\\d+)?)\").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
         } catch (e: Exception) { 0f }
     }
 
@@ -534,20 +550,4 @@ class DhakaFlix2(
     override fun videoListParse(response: Response): List<Video> = throw Exception("Not used")
 
     data class EpisodeData(val seasonEpisode: String, val videoUrl: String, val quality: String, val episodeName: String, val size: String)
-
-    companion object {
-        private const val PREF_TMDB_API_KEY = "tmdb_api_key"
-        private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.`1`{1,3}\\.`1`{1,3}\\.`1`{1,3})\\s*http")
-        private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
-        private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
-        private val FILE_EXT_REGEX = Regex("\\.(mkv|mp4|avi|flv)\", RegexOption.IGNORE_CASE)
-        private val SEPARATOR_REGEX = Regex("[._]", RegexOption.IGNORE_CASE)
-        private val EPISODE_S_E_REGEX = Regex("\\s+S\\d+E\\d+.*", RegexOption.IGNORE_CASE)
-        private val SEASON_REGEX = Regex("\\s+S\\d+.*", RegexOption.IGNORE_CASE)
-        private val EPISODE_TEXT_REGEX = Regex("\\s+(?:Episode|Ep)\\s*\\d+.*", RegexOption.IGNORE_CASE)
-        private val YEAR_REGEX = Regex("\\s+[\\\\[\\(]?\\d{4}[\\\\]\\)?.*", RegexOption.IGNORE_CASE)
-        private val QUALITY_REGEX = Regex("\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*", RegexOption.IGNORE_CASE)
-        private val DASH_REGEX = Regex("\\s+-\\s+\\d+\\s+.*", RegexOption.IGNORE_CASE)
-    }
 }
