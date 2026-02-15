@@ -40,11 +40,12 @@ import uy.kohesive.injekt.api.get
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
-abstract class DhakaFlixBase(
+class DhakaFlix2(
     override val name: String,
     override val baseUrl: String,
     override val id: Long,
-    protected val serverPath: String
+    private val serverPath: String,
+    private val serverCategories: Array<String>
 ) : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override val lang = "all"
@@ -80,7 +81,8 @@ abstract class DhakaFlixBase(
             title = "Clear TMDb Cache"
             summary = "Clears all cached TMDb poster URLs"
             setDefaultValue(false)
-            setOnPreferenceChangeListener { _, newValue ->
+            setOnPreferenceChangeListener {
+                _, newValue ->
                 if (newValue as Boolean) {
                     val editor = preferences.edit()
                     preferences.all.keys.filter { it.startsWith("tmdb_cover_") }.forEach { editor.remove(it) }
@@ -93,7 +95,7 @@ abstract class DhakaFlixBase(
         }.also { screen.addPreference(it) }
     }
 
-    protected fun fixUrl(url: String): String {
+    private fun fixUrl(url: String): String {
         if (url.isBlank()) return url
         var u = url.trim()
         val lastHttp = u.lastIndexOf("http://", ignoreCase = true)
@@ -109,7 +111,7 @@ abstract class DhakaFlixBase(
 
     private val enrichmentSemaphore = Semaphore(5)
 
-    protected suspend fun enrichAnimes(animes: List<SAnime>) {
+    private suspend fun enrichAnimes(animes: List<SAnime>) {
         val useTmdb = preferences.getBoolean(PREF_USE_TMDB_COVERS, false)
         if (!useTmdb) return
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
@@ -185,17 +187,26 @@ abstract class DhakaFlixBase(
         }
 
         val results = withContext(Dispatchers.IO) {
-            val paths = getSearchPaths()
-            val deferredResults = paths.map { path ->
+            val paths = mutableListOf("/$serverPath/")
+            if (serverPath == "DHAKA-FLIX-9") {
+                paths.add("/$serverPath/Anime & Cartoon TV Series/")
+                paths.add("/$serverPath/Anime & Cartoon Movies/")
+            }
+            if (serverPath == "DHAKA-FLIX-12") {
+                paths.add("/$serverPath/TV-WEB-Series/")
+                paths.add("/$serverPath/Hindi Movies/")
+            }
+            
+            val deferredResults = paths.map {
                 async {
                     try {
-                        searchSingleServer(baseUrl, serverPath, path, query)
+                        searchSingleServer(baseUrl, serverPath, it, query)
                     } catch (e: Exception) {
                         emptyList<SAnime>()
                     }
                 }
-            }
-            val allAnime = deferredResults.awaitAll().flatten().distinctBy { it.url }
+            }.awaitAll()
+            val allAnime = deferredResults.flatten().distinctBy { it.url }
             sortByTitle(collapseResults(allAnime), query)
         }
 
@@ -206,8 +217,6 @@ abstract class DhakaFlixBase(
 
         return AnimesPage(results, false).also { enrichAnimes(it.animes) }
     }
-
-    abstract fun getSearchPaths(): List<String>
 
     private fun collapseResults(list: List<SAnime>): List<SAnime> {
         val folders = list.filter { it.url.endsWith("/") }.map { it.url }.toSet()
@@ -279,7 +288,7 @@ abstract class DhakaFlixBase(
         return results
     }
 
-    protected fun isIgnored(text: String, query: String = ""): Boolean {
+    private fun isIgnored(text: String, query: String = ""): Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai")
         if (ignored.any { text.contains(it, ignoreCase = true) }) return true
         val uploaderTags = listOf("-LOKI", "-LOKiHD", "-TDoc", "-Tuna", "-PSA", "-Pahe", "-QxR", "-YIFY", "-RARBG")
@@ -316,10 +325,21 @@ abstract class DhakaFlixBase(
         return (2.0 * intersection) / (n1 + n2 - 2).coerceAtLeast(1)
     }
 
-    protected fun getFolderThumb(url: String): String {
+    private fun getFolderThumb(url: String): String {
         if (!url.endsWith("/")) return ""
         val suffix = if (baseUrl.contains("172.16.50.9")) "a11.jpg" else "a_AL_.jpg"
         return fixUrl("$url$suffix")
+    }
+
+    override fun popularAnimeRequest(page: Int): Request {
+        val path = when {
+            baseUrl.contains("50.14") -> "$serverPath/Hindi%20Movies/%282026%29/"
+            baseUrl.contains("50.12") -> "$serverPath/TV-WEB-Series/TV%20Series%20%E2%99%A5%20%20A%20%20%E2%80%94%20%20L/"
+            baseUrl.contains("50.9") -> "$serverPath/Anime%20%26%20Cartoon%20TV%20Series/Anime-TV%20Series%20%E2%99%A5%20%20A%20%20%E2%80%94%20%20F/"
+            baseUrl.contains("50.7") -> "$serverPath/English%20Movies/"
+            else -> ""
+        }
+        return GET("$baseUrl/$path", headers)
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
@@ -356,6 +376,22 @@ abstract class DhakaFlixBase(
 
     override fun latestUpdatesRequest(page: Int) = popularAnimeRequest(page)
     override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
+
+    override fun getFilterList(): AnimeFilterList {
+        return AnimeFilterList(
+            AnimeFilter.Header("--- Category ---"),
+            DhakaFlixSelect("Select Category", serverCategories),
+            DhakaFlixSelect("Select Year", FilterData.YEARS),
+            DhakaFlixSelect("Select Alphabet / Number", FilterData.ALPHABET),
+            DhakaFlixSelect("Select Language", FilterData.LANGUAGES)
+        )
+    }
+
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
+        return if (query.isNotEmpty()) GET("$baseUrl/$query", headers)
+        else GET(fixUrl(Filters.getUrl(baseUrl, serverPath, filters)), headers)
+    }
+
     override fun searchAnimeParse(response: Response) = popularAnimeParse(response)
 
     override suspend fun getAnimeDetails(anime: SAnime): SAnime {
@@ -384,7 +420,7 @@ abstract class DhakaFlixBase(
                 it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
             } ?: ""
             if (thumbUrl.isEmpty()) {
-                thumbUrl = document.selectFirst("a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
+                thumbUrl = document.selectFirst("a[href~=(?i)\\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])")?.attr("abs:href") ?: ""
             }
             if (thumbUrl.isEmpty() && response.request.url.toString().endsWith("/")) {
                 thumbUrl = getFolderThumb(response.request.url.toString())
@@ -445,9 +481,9 @@ abstract class DhakaFlixBase(
         val currentHttpUrl = doc.location().toHttpUrlOrNull() ?: return emptyList()
         val fileEpisodes = mutableListOf<SEpisode>()
         val subDirs = mutableListOf<String>()
-        doc.select("a").forEach { element ->
-            val href = element.attr("href")
-            val text = element.text().trim()
+        doc.select("a").forEach {
+            val href = it.attr("href")
+            val text = it.text().trim()
             if (href.contains("..") || href.startsWith("?") || isIgnored(text)) return@forEach
             val absUrl = currentHttpUrl.resolve(href)?.toString() ?: return@forEach
             if (isVideoFile(href)) {
@@ -483,8 +519,8 @@ abstract class DhakaFlixBase(
 
     private fun parseEpisodeNumber(text: String): Float {
         return try {
-            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\.?\s*(\d+(\.\d+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)
-            number?.toFloatOrNull() ?: Regex("(\d+(\.\d+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+            val number = Regex("(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\d+(\\.\\d+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)
+            number?.toFloatOrNull() ?: Regex("(\\d+(\\.\\d+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
         } catch (e: Exception) { 0f }
     }
 
@@ -502,7 +538,7 @@ abstract class DhakaFlixBase(
     companion object {
         private const val PREF_TMDB_API_KEY = "tmdb_api_key"
         private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
-        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http")
+        private val IP_HTTP_REGEX = Regex("(\\d{1,3}\\.`1`{1,3}\\.`1`{1,3}\\.`1`{1,3})\\s*http")
         private val DOUBLE_PROTOCOL_REGEX = Regex("http(s)?://http(s)?://")
         private val MULTI_SLASH_REGEX = Regex("(?<!:)/{2,}")
         private val FILE_EXT_REGEX = Regex("\\.(mkv|mp4|avi|flv)\", RegexOption.IGNORE_CASE)
@@ -510,93 +546,8 @@ abstract class DhakaFlixBase(
         private val EPISODE_S_E_REGEX = Regex("\\s+S\\d+E\\d+.*", RegexOption.IGNORE_CASE)
         private val SEASON_REGEX = Regex("\\s+S\\d+.*", RegexOption.IGNORE_CASE)
         private val EPISODE_TEXT_REGEX = Regex("\\s+(?:Episode|Ep)\\s*\\d+.*", RegexOption.IGNORE_CASE)
-        private val YEAR_REGEX = Regex("\\s+[\\\\[\\(]?\\d{4}[\\\\]\\)]?.*", RegexOption.IGNORE_CASE)
+        private val YEAR_REGEX = Regex("\\s+[\\\\[\\(]?\\d{4}[\\\\]\\)?.*", RegexOption.IGNORE_CASE)
         private val QUALITY_REGEX = Regex("\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*", RegexOption.IGNORE_CASE)
         private val DASH_REGEX = Regex("\\s+-\\s+\\d+\\s+.*", RegexOption.IGNORE_CASE)
-    }
-}
-
-class DhakaFlixHindi : DhakaFlixBase(
-    "DhakaFlix (Hindi & South Indian)",
-    "http://172.16.50.14",
-    5181466391484419941L,
-    "DHAKA-FLIX-14"
-) {
-    override fun getSearchPaths() = listOf("/$serverPath/")
-    override fun popularAnimeRequest(page: Int): Request = GET("$baseUrl/$serverPath/Hindi%20Movies/%282026%29/", headers)
-    override fun getFilterList() = AnimeFilterList(
-        AnimeFilter.Header("--- Category ---"),
-        DhakaFlixSelect("Select Category", arrayOf(
-            "Hindi Movies", "English Movies (1080p)", "South Indian Movies",
-            "South Hindi Dubbed", "Animation Movies", "Korean TV & Web Series",
-            "IMDb Top-250 Movies", "Trending Movies"
-        )),
-        DhakaFlixSelect("Select Year", FilterData.YEARS),
-        DhakaFlixSelect("Select Alphabet / Number", FilterData.ALPHABET)
-    )
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        return if (query.isNotEmpty()) GET("$baseUrl/$query", headers)
-        else GET(Filters.getUrl(baseUrl, serverPath, filters), headers)
-    }
-}
-
-class DhakaFlixTV : DhakaFlixBase(
-    "DhakaFlix (TV & Web Series)",
-    "http://172.16.50.12",
-    5181466391484419942L,
-    "DHAKA-FLIX-12"
-) {
-    override fun getSearchPaths() = listOf("/$serverPath/", "/$serverPath/TV-WEB-Series/", "/$serverPath/Hindi Movies/")
-    override fun popularAnimeRequest(page: Int): Request = GET("$baseUrl/$serverPath/TV-WEB-Series/TV%20Series%20%E2%99%A5%20%20A%20%20%E2%80%94%20%20L/", headers)
-    override fun getFilterList() = AnimeFilterList(
-        AnimeFilter.Header("--- Category ---"),
-        DhakaFlixSelect("Select Category", arrayOf("TV Series", "Hindi Movies")),
-        DhakaFlixSelect("Select Year", FilterData.YEARS),
-        DhakaFlixSelect("Select Alphabet / Number", FilterData.ALPHABET)
-    )
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        return if (query.isNotEmpty()) GET("$baseUrl/$query", headers)
-        else GET(Filters.getUrl(baseUrl, serverPath, filters), headers)
-    }
-}
-
-class DhakaFlixAnime : DhakaFlixBase(
-    "DhakaFlix (Anime & Documentary)",
-    "http://172.16.50.9",
-    5181466391484419943L,
-    "DHAKA-FLIX-9"
-) {
-    override fun getSearchPaths() = listOf("/$serverPath/", "/$serverPath/Anime & Cartoon TV Series/", "/$serverPath/Anime & Cartoon Movies/")
-    override fun popularAnimeRequest(page: Int): Request = GET("$baseUrl/$serverPath/Anime%20%26%20Cartoon%20TV%20Series/Anime-TV%20Series%20%E2%99%A5%20%20A%20%20%E2%80%94%20%20F/", headers)
-    override fun getFilterList() = AnimeFilterList(
-        AnimeFilter.Header("--- Category ---"),
-        DhakaFlixSelect("Select Category", arrayOf("Anime-TV Series", "Documentary", "WWE & AEW Wrestling", "Awards & TV Shows")),
-        DhakaFlixSelect("Select Year", FilterData.YEARS),
-        DhakaFlixSelect("Select Alphabet / Number", FilterData.ALPHABET)
-    )
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        return if (query.isNotEmpty()) GET("$baseUrl/$query", headers)
-        else GET(Filters.getUrl(baseUrl, serverPath, filters), headers)
-    }
-}
-
-class DhakaFlixEnglish : DhakaFlixBase(
-    "DhakaFlix (English & International)",
-    "http://172.16.50.7",
-    5181466391484419944L,
-    "DHAKA-FLIX-7"
-) {
-    override fun getSearchPaths() = listOf("/$serverPath/")
-    override fun popularAnimeRequest(page: Int): Request = GET("$baseUrl/$serverPath/English%20Movies/", headers)
-    override fun getFilterList() = AnimeFilterList(
-        AnimeFilter.Header("--- Category ---"),
-        DhakaFlixSelect("Select Category", arrayOf("English Movies", "Kolkata Bangla Movies", "Foreign Language Movies", "3D Movies")),
-        DhakaFlixSelect("Select Year", FilterData.YEARS),
-        DhakaFlixSelect("Select Alphabet / Number", FilterData.ALPHABET),
-        DhakaFlixSelect("Select Language", FilterData.LANGUAGES)
-    )
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        return if (query.isNotEmpty()) GET("$baseUrl/$query", headers)
-        else GET(Filters.getUrl(baseUrl, serverPath, filters), headers)
     }
 }
