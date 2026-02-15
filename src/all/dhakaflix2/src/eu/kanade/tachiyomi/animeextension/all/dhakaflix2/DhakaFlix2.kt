@@ -282,7 +282,7 @@ class DhakaFlix2(
         return results
     }
 
-    private fun isIgnored(text: String, query: String = ""):
+    private fun isIgnored(text: String, query: String = ""): Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai")
         if (ignored.any { text.contains(it, ignoreCase = true) }) return true
         
