@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.animeextension.all.dhakaflix2_new
+package eu.kanade.tachiyomi.animeextension.all.dhakaflix2
 
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
