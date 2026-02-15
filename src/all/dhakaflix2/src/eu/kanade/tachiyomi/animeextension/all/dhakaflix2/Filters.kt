@@ -4,8 +4,8 @@ import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 
 object Filters {
-    fun getFilterList(dynamicCategories: Array<String>): AnimeFilterList {
-        val categories = if (dynamicCategories.isNotEmpty()) dynamicCategories else FilterData.CATEGORIES
+    fun getFilterList(baseUrl: String): AnimeFilterList {
+        val categories = FilterData.getServerCategories(baseUrl)
         return AnimeFilterList(
             AnimeFilter.Header("--- Category ---"),
             DhakaFlixSelect("Select Category", categories),
@@ -15,9 +15,18 @@ object Filters {
         )
     }
 
-    fun getUrl(query: String, filters: AnimeFilterList?): String {
+    fun getUrl(baseUrl: String, serverPath: String, query: String, filters: AnimeFilterList?): String {
         if (query.isNotEmpty()) return query
-        if (filters == null) return "http://172.16.50.14/DHAKA-FLIX-14/Hindi%20Movies/%282026%29/"
+        
+        val fullBaseUrl = "$baseUrl/$serverPath"
+        if (filters == null) {
+            return when {
+                baseUrl.contains("50.14") -> "$fullBaseUrl/Hindi Movies/(2026)/"
+                baseUrl.contains("50.12") -> "$fullBaseUrl/TV-WEB-Series/TV Series \u2665  A  \u2014  L/"
+                baseUrl.contains("50.9") -> "$fullBaseUrl/Anime & Cartoon TV Series/Anime-TV Series \u2665  A  \u2014  F/"
+                else -> "$fullBaseUrl/English Movies/"
+            }
+        }
 
         val categoryFilter = filters[1] as DhakaFlixSelect
         val yearFilter = filters[2] as DhakaFlixSelect
@@ -29,47 +38,21 @@ object Filters {
         val alphabet = alphabetFilter.values[alphabetFilter.state]
         val lang = langFilter.values[langFilter.state]
 
-        var baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
-        var path = "Hindi Movies"
+        var path = category
 
         when (category) {
-            "Hindi Movies" -> {
-                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
-                path = "Hindi Movies"
-            }
-            "English Movies" -> {
-                baseUrl = "http://172.16.50.7/DHAKA-FLIX-7"
-                path = "English Movies"
-            }
-            "English Movies (1080p)" -> {
-                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
-                path = "English Movies (1080p)"
-            }
-            "South Indian Movies" -> {
-                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
-                path = "SOUTH INDIAN MOVIES/South Movies"
-            }
-            "South Hindi Dubbed" -> {
-                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
-                path = "SOUTH INDIAN MOVIES/Hindi Dubbed"
-            }
-            "Kolkata Bangla Movies" -> {
-                baseUrl = "http://172.16.50.7/DHAKA-FLIX-7"
-                path = "Kolkata Bangla Movies"
-            }
-            "Animation Movies" -> {
-                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
-                path = "Animation Movies"
-            }
+            "Hindi Movies" -> path = "Hindi Movies"
+            "English Movies" -> path = "English Movies"
+            "English Movies (1080p)" -> path = "English Movies (1080p)"
+            "South Indian Movies" -> path = "SOUTH INDIAN MOVIES/South Movies"
+            "South Hindi Dubbed" -> path = "SOUTH INDIAN MOVIES/Hindi Dubbed"
+            "Kolkata Bangla Movies" -> path = "Kolkata Bangla Movies"
+            "Animation Movies" -> path = "Animation Movies"
             "Foreign Language Movies" -> {
-                baseUrl = "http://172.16.50.7/DHAKA-FLIX-7"
                 path = "Foreign Language Movies"
-                if (lang != "Any") {
-                    return "$baseUrl/$path/$lang/"
-                }
+                if (lang != "Any") return "$fullBaseUrl/$path/$lang/"
             }
             "TV Series" -> {
-                baseUrl = "http://172.16.50.12/DHAKA-FLIX-12"
                 if (alphabet != "Any") {
                     val subPath = when (alphabet) {
                         "0-9" -> "TV Series \u2605  0  \u2014  9"
@@ -77,16 +60,12 @@ object Filters {
                         "N-S / S-Z" -> "TV Series \u2666  S  \u2014  Z"
                         else -> "TV Series \u2665  A  \u2014  L" 
                     }
-                    return "$baseUrl/TV-WEB-Series/$subPath/"
+                    return "$fullBaseUrl/TV-WEB-Series/$subPath/"
                 }
                 path = "TV-WEB-Series"
             }
-            "Korean TV & Web Series" -> {
-                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
-                path = "KOREAN TV & WEB Series"
-            }
+            "Korean TV & Web Series" -> path = "KOREAN TV & WEB Series"
             "Anime-TV Series" -> {
-                baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
                 if (alphabet != "Any") {
                     val subPath = when (alphabet) {
                         "0-9" -> "Anime-TV Series \u2605  0  \u2014  9"
@@ -95,34 +74,18 @@ object Filters {
                         "T-Z" -> "Anime-TV Series \u2666  T  \u2014  Z"
                         else -> "Anime-TV Series \u2665  A  \u2014  F"
                     }
-                    return "$baseUrl/Anime & Cartoon TV Series/$subPath/"
+                    return "$fullBaseUrl/Anime & Cartoon TV Series/$subPath/"
                 }
                 path = "Anime & Cartoon TV Series"
             }
-            "Documentary" -> {
-                baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
-                path = "Documentary"
-            }
-            "WWE & AEW Wrestling" -> {
-                baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
-                path = "WWE & AEW Wrestling"
-            }
-            "Awards & TV Shows" -> {
-                baseUrl = "http://172.16.50.9/DHAKA-FLIX-9"
-                path = "Awards & TV Shows"
-            }
-            "IMDb Top-250 Movies" -> {
-                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
-                path = "IMDb Top-250 Movies"
-            }
-            "3D Movies" -> {
-                baseUrl = "http://172.16.50.7/DHAKA-FLIX-7"
-                path = "3D Movies"
-            }
+            "Documentary" -> path = "Documentary"
+            "WWE & AEW Wrestling" -> path = "WWE & AEW Wrestling"
+            "Awards & TV Shows" -> path = "Awards & TV Shows"
+            "IMDb Top-250 Movies" -> path = "IMDb Top-250 Movies"
+            "3D Movies" -> path = "3D Movies"
             "Trending Movies" -> {
-                baseUrl = "http://172.16.50.14/DHAKA-FLIX-14"
                 path = "Hindi Movies/(2026)"
-                return "$baseUrl/$path/"
+                return "$fullBaseUrl/$path/"
             }
         }
 
@@ -135,7 +98,7 @@ object Filters {
                 "T-Z" -> "T-Z"
                 else -> alphabet
             }
-            return "$baseUrl/$path/$alphaPath/"
+            return "$fullBaseUrl/$path/$alphaPath/"
         }
 
         if (year != "Any") {
@@ -149,9 +112,9 @@ object Filters {
                 }
                 else -> "($year)"
             }
-            return "$baseUrl/$path/$yearPath/"
+            return "$fullBaseUrl/$path/$yearPath/"
         }
 
-        return "$baseUrl/$path/"
+        return "$fullBaseUrl/$path/"
     }
 }

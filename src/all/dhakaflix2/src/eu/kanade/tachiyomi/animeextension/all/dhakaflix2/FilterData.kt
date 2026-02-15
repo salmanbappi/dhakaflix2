@@ -1,24 +1,30 @@
 package eu.kanade.tachiyomi.animeextension.all.dhakaflix2
 
 object FilterData {
+    fun getServerCategories(baseUrl: String): Array<String> {
+        return when {
+            baseUrl.contains("50.14") -> arrayOf(
+                "Hindi Movies", "English Movies (1080p)", "South Indian Movies",
+                "South Hindi Dubbed", "Animation Movies", "Korean TV & Web Series",
+                "IMDb Top-250 Movies", "Trending Movies"
+            )
+            baseUrl.contains("50.12") -> arrayOf("TV Series", "Hindi Movies")
+            baseUrl.contains("50.9") -> arrayOf(
+                "Anime-TV Series", "Documentary", "WWE & AEW Wrestling", "Awards & TV Shows"
+            )
+            baseUrl.contains("50.7") -> arrayOf(
+                "English Movies", "Kolkata Bangla Movies", "Foreign Language Movies", "3D Movies"
+            )
+            else -> CATEGORIES
+        }
+    }
+
     val CATEGORIES = arrayOf(
-        "Hindi Movies",
-        "English Movies",
-        "English Movies (1080p)",
-        "South Indian Movies",
-        "South Hindi Dubbed",
-        "Kolkata Bangla Movies",
-        "Animation Movies",
-        "Foreign Language Movies",
-        "TV Series",
-        "Korean TV & Web Series",
-        "Anime-TV Series",
-        "Documentary",
-        "WWE & AEW Wrestling",
-        "Awards & TV Shows",
-        "IMDb Top-250 Movies",
-        "3D Movies",
-        "Trending Movies"
+        "Hindi Movies", "English Movies", "English Movies (1080p)", "South Indian Movies",
+        "South Hindi Dubbed", "Kolkata Bangla Movies", "Animation Movies",
+        "Foreign Language Movies", "TV Series", "Korean TV & Web Series",
+        "Anime-TV Series", "Documentary", "WWE & AEW Wrestling", "Awards & TV Shows",
+        "IMDb Top-250 Movies", "3D Movies", "Trending Movies"
     )
 
     val YEARS = arrayOf(
