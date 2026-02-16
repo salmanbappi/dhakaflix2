@@ -44,18 +44,18 @@ import java.util.concurrent.TimeUnit
 private const val PREF_TMDB_API_KEY = "tmdb_api_key"
 private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
 
-private val IP_HTTP_REGEX = Regex(\"(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\s*http\")
+private val IP_HTTP_REGEX = Regex(\"(\\\\d{1,3}\\\\.` + '`' + `\\\\d{1,3}\\\\.` + '`' + `\\\\d{1,3}\\\\.` + '`' + `\\\\d{1,3})\\s*http\")
 private val DOUBLE_PROTOCOL_REGEX = Regex(\"http(s)?://http(s)?://\")
 private val MULTI_SLASH_REGEX = Regex(\"(?<!:)/{2,}\")
 
-private val FILE_EXT_REGEX = Regex(\"\\.(mkv|mp4|avi|flv)$", RegexOption.IGNORE_CASE)
-private val SEPARATOR_REGEX = Regex(\"[._]", RegexOption.IGNORE_CASE)
-private val EPISODE_S_E_REGEX = Regex(\"\\s+S\\d+E\\d+.*\", RegexOption.IGNORE_CASE)
-private val SEASON_REGEX = Regex(\"\\s+S\\d+.*\", RegexOption.IGNORE_CASE)
-private val EPISODE_TEXT_REGEX = Regex(\"\\s+(?:Episode|Ep)\\s*\\d+.*\", RegexOption.IGNORE_CASE)
-private val YEAR_REGEX = Regex(\"\\s+[\\[\\(\\)?\\d{4}[\\]\\)?.*\", RegexOption.IGNORE_CASE)
-private val QUALITY_REGEX = Regex(\"\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*\", RegexOption.IGNORE_CASE)
-private val DASH_REGEX = Regex(\"\\s+-\\s+\\d+\\s+.*\", RegexOption.IGNORE_CASE)
+private val FILE_EXT_REGEX = Regex(\"\\.(mkv|mp4|avi|flv)$\", RegexOption.IGNORE_CASE)
+private val SEPARATOR_REGEX = Regex(\"[._]\\", RegexOption.IGNORE_CASE)
+private val EPISODE_S_E_REGEX = Regex(\"\\s+S\\d+E\\d+.*\\", RegexOption.IGNORE_CASE)
+private val SEASON_REGEX = Regex(\"\\s+S\\d+.*\\", RegexOption.IGNORE_CASE)
+private val EPISODE_TEXT_REGEX = Regex(\"\\s+(?:Episode|Ep)\\\\s*\\d+.*\\", RegexOption.IGNORE_CASE)
+private val YEAR_REGEX = Regex(\"\\s+[\\\\[\\\\(\\\\]?` + '`' + `\\d{4}[\\\\]\\\\)\\\\]?.*\\", RegexOption.IGNORE_CASE)
+private val QUALITY_REGEX = Regex(\"\\s+(720p|1080p|WEB-DL|BluRay|HDRip|HDTC|HDCAM|ESub|Dual Audio).*\\", RegexOption.IGNORE_CASE)
+private val DASH_REGEX = Regex(\"\\s+-\\s+\\d+\\s+.*\\", RegexOption.IGNORE_CASE)
 
 class DhakaFlix2(
     override val name: String,
@@ -133,16 +133,18 @@ class DhakaFlix2(
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
         if (apiKey.isBlank()) return
 
-        withTimeoutOrNull(8000) {
-            coroutineScope {
-                animes.take(40).map { anime ->
-                    async {
-                        enrichmentSemaphore.withPermit {
-                            val tmdbCover = fetchTmdbImage(anime.title)
-                            if (tmdbCover != null) anime.thumbnail_url = tmdbCover
+        withContext(Dispatchers.IO) {
+            withTimeoutOrNull(10000) {
+                coroutineScope {
+                    animes.take(40).map { anime ->
+                        async {
+                            enrichmentSemaphore.withPermit {
+                                val tmdbCover = fetchTmdbImage(anime.title)
+                                if (tmdbCover != null) anime.thumbnail_url = tmdbCover
+                            }
                         }
-                    }
-                }.awaitAll()
+                    }.awaitAll()
+                }
             }
         }
     }
@@ -155,11 +157,12 @@ class DhakaFlix2(
         if (apiKey.isBlank()) return null
 
         val cleanTitle = cleanTitleForTmdb(title)
-        val url = "https://api.themoviedb.org/3/search/multi?api_key=$apiKey&query=$cleanTitle".toHttpUrl()
+        val url = "https://api.themoviedb.org/3/search/multi?api_key=$apiKey&query=$cleanTitle".toHttpUrlOrNull() ?: return null
         
         return try {
             client.newCall(Request.Builder().url(url).build()).execute().use {
-                val results = JSONObject(it.body?.string()).optJSONArray("results")
+                val bodyStr = it.body?.string() ?: return null
+                val results = JSONObject(bodyStr).optJSONArray("results")
                 if (results != null && results.length() > 0) {
                     val path = results.getJSONObject(0).optString("poster_path")
                     if (path.isNotEmpty() && path != "null") {
@@ -469,7 +472,7 @@ class DhakaFlix2(
             val name = rawName.split("&nbsp;", "\u00A0").first().trim()
             val url = titleElement.selectFirst("a")?.attr("abs:href") ?: ""
             val q = element.selectFirst("h5 .badge-fill")?.text()?.let {
-                Regex(\"(\\d+\\.\\d+ [GM]B|\\d+ [GM]B).*\").replace(it, "$1")
+                Regex("(\\\\d+\\\\.` + '`' + `\\d+ [GM]B|` + '`' + `\\d+ [GM]B).*\").replace(it, "$1")
             } ?: ""
             val episodeName = element.selectFirst("h4")?.ownText()?.trim() ?: ""
             val size = element.selectFirst("h4 .badge-outline")?.text()?.trim() ?: ""
@@ -535,8 +538,12 @@ class DhakaFlix2(
 
     private fun parseEpisodeNumber(text: String): Float {
         return try {
-            val number = Regex(\"((?i)(?:Episode|Ep|E|Vol))\\.?\\s*(\\d+(\\.\\d+)?)\").find(text)?.groupValues?.get(1)
-            number?.toFloatOrNull() ?: Regex(\"(\\d+(\\.\\d+)?)\").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+            val res = Regex("""(?i)(?:Episode|Ep|E|Vol)\\.?\\s*(\\\\d+(\\\\.\\d+)?)"""" ).find(text)
+            if (res != null) {
+                res.groupValues[1].toFloatOrNull() ?: 0f
+            } else {
+                Regex("(\\\\d+(\\\\.\\d+)?)").find(text)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+            }
         } catch (e: Exception) { 0f }
     }
 
