@@ -337,7 +337,7 @@ class DhakaFlix2(
     private fun isIgnored(text: String, query: String = ""): Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai")
         if (ignored.any { text.contains(it, ignoreCase = true) }) return true
-        val uploaderTags = listOf("-LOKI", "-LOKiHD", "-TDoc", "-Tuna", "-PSA", "-Pahe", "-QxR", "-YIFY", "-RARBG")
+        val uploaderTags = listOf("-TDoc", "-Tuna", "-PSA", "-Pahe", "-QxR", "-YIFY", "-RARBG")
         if (uploaderTags.any { text.endsWith(it, ignoreCase = true) || text.contains("$it.") || text.contains("$it ") }) {
             val cleanQuery = query.trim().removePrefix("-")
             if (cleanQuery.isNotEmpty() && uploaderTags.any { it.removePrefix("-").equals(cleanQuery, ignoreCase = true) }) {
@@ -533,7 +533,7 @@ class DhakaFlix2(
     }
 
     private val semaphore = Semaphore(5)
-    private suspend fun parseDirectoryRecursive(document: Document): List<SEpisode> = parseDir(document.location(), 3, document)
+    private suspend fun parseDirectoryRecursive(document: Document): List<SEpisode> = parseDir(document.location(), 4, document)
 
     private suspend fun parseDir(url: String, depth: Int, initialDoc: Document? = null): List<SEpisode> {
         if (depth < 0) return emptyList()
