@@ -112,11 +112,17 @@ jobs:
             exit 1
           fi
           cp "$SIGNED_APK" repo_tmp/apk/$TARGET_NAME
+
+          # --- FIX: Ensure Icon is copied ---
+          mkdir -p repo_tmp/icon
+          cp "src/all/dhakaflix2/res/mipmap-xhdpi/ic_launcher.png" "repo_tmp/icon/$PKG_NAME.png"
+          echo "✅ Icon copied to extensions-repo/icon/$PKG_NAME.png"
           
           cd repo_tmp
           git config user.name "salmanbappi"
           git config user.email "salmanbappi@users.noreply.github.com"
           git add apk/$TARGET_NAME
+          git add icon/$PKG_NAME.png
           
           # Regenerate index
           python generate_repo.py
