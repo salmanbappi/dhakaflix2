@@ -24,8 +24,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -42,6 +41,8 @@ import java.util.concurrent.TimeUnit
 // --- Constants ---
 private const val PREF_TMDB_API_KEY = "tmdb_api_key"
 private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
+private const val IMAGE_PROBE_MARKER = "a_AL_.jpg"
+private const val FALLBACK_IMAGE = "a11.jpg"
 
 private val IP_HTTP_REGEX = Regex("""(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*http""")
 private val DOUBLE_PROTOCOL_REGEX = Regex("""http(s)?://http(s)?://""")
@@ -66,6 +67,23 @@ class DhakaFlix2(
 
     override val lang = "all"
     override val supportsLatest = true
+
+    override val client: OkHttpClient = super.client.newBuilder()
+        .addInterceptor(ImageInterceptor())
+        .build()
+
+    private inner class ImageInterceptor : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request = chain.request()
+            val response = chain.proceed(request)
+            if (response.isSuccessful || !request.url.toString().contains(IMAGE_PROBE_MARKER)) {
+                return response
+            }
+            response.close()
+            val newUrl = request.url.toString().replace(IMAGE_PROBE_MARKER, FALLBACK_IMAGE)
+            return chain.proceed(request.newBuilder().url(newUrl).build())
+        }
+    }
 
     private val preferences: SharedPreferences by lazy {
         Injekt.get<Application>().getSharedPreferences("source_$id", 0)
@@ -207,11 +225,18 @@ class DhakaFlix2(
         val results = withContext(Dispatchers.IO) {
             val paths = mutableListOf("/$serverPath/")
             if (serverPath == "DHAKA-FLIX-9") {
-                paths.add("/$serverPath/Anime & Cartoon TV Series/")
+                paths.add("/$serverPath/Anime & Cartoon TV Series/Anime-TV Series \u2665  A  \u2014  F/")
+                paths.add("/$serverPath/Anime & Cartoon TV Series/Anime-TV Series \u2665  G  \u2014  M/")
+                paths.add("/$serverPath/Anime & Cartoon TV Series/Anime-TV Series \u2666  N  \u2014  S/")
+                paths.add("/$serverPath/Anime & Cartoon TV Series/Anime-TV Series \u2666  T  \u2014  Z/")
+                paths.add("/$serverPath/Anime & Cartoon TV Series/Anime-TV Series \u2605  0  \u2014  9/")
                 paths.add("/$serverPath/Anime & Cartoon Movies/")
             }
             if (serverPath == "DHAKA-FLIX-12") {
-                paths.add("/$serverPath/TV-WEB-Series/")
+                paths.add("/$serverPath/TV-WEB-Series/TV Series \u2665  A  \u2014  L/")
+                paths.add("/$serverPath/TV-WEB-Series/TV Series \u2666  M  \u2014  R/")
+                paths.add("/$serverPath/TV-WEB-Series/TV Series \u2666  S  \u2014  Z/")
+                paths.add("/$serverPath/TV-WEB-Series/TV Series \u2605  0  \u2014  9/")
                 paths.add("/$serverPath/Hindi Movies/")
             }
             
@@ -345,16 +370,15 @@ class DhakaFlix2(
 
     private fun getFolderThumb(url: String): String {
         if (!url.endsWith("/")) return ""
-        val suffix = if (baseUrl.contains("172.16.50.9")) "a11.jpg" else "a_AL_.jpg"
-        return fixUrl("$url$suffix")
+        return fixUrl("$url$IMAGE_PROBE_MARKER")
     }
 
     override fun popularAnimeRequest(page: Int): Request {
         val path = when {
-            baseUrl.contains("50.14") -> "$serverPath/Hindi%20Movies/%282026%29/"
+            baseUrl.contains("50.14") -> "$serverPath/Hindi%20Movies/"
             baseUrl.contains("50.12") -> "$serverPath/TV-WEB-Series/TV%20Series%20%E2%99%A5%20%20A%20%20%E2%80%94%20%20L/"
             baseUrl.contains("50.9") -> "$serverPath/Anime%20%26%20Cartoon%20TV%20Series/Anime-TV%20Series%20%E2%99%A5%20%20A%20%20%E2%80%94%20%20F/"
-            baseUrl.contains("50.7") -> "$serverPath/English%20Movies/%282026%29/"
+            baseUrl.contains("50.7") -> "$serverPath/English%20Movies/"
             else -> ""
         }
         return GET("$baseUrl/$path", headers)
@@ -491,7 +515,7 @@ class DhakaFlix2(
     }
 
     private val semaphore = Semaphore(5)
-    private suspend fun parseDirectoryRecursive(document: Document): List<SEpisode> = parseDir(document.location(), 2, document)
+    private suspend fun parseDirectoryRecursive(document: Document): List<SEpisode> = parseDir(document.location(), 3, document)
 
     private suspend fun parseDir(url: String, depth: Int, initialDoc: Document? = null): List<SEpisode> {
         if (depth < 0) return emptyList()
