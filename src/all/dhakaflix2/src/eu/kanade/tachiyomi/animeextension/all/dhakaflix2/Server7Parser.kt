@@ -6,7 +6,7 @@ import java.net.URLDecoder
 import java.util.regex.Pattern
 
 object Server7Parser {
-    private val pattern = Pattern.compile("\"href\":\"([^\"]+)\"[^}]*\"size\":(null|\\\\d+)", Pattern.CASE_INSENSITIVE)
+    private val pattern = Pattern.compile("""\"href\":\"([^\"]+)\"[^}]*\"size\":(null|\d+)""", Pattern.CASE_INSENSITIVE)
 
     fun parseServer7Response(bodyString: String, serverUrl: String, serverName: String, results: MutableList<SAnime>, query: String = "") {
         val hostUrl = serverUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return
