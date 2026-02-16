@@ -3,7 +3,7 @@ ext {
     extClass = '.DhakaFlixFactory'
     author = '@salmanbappi'
     baseUrl = 'http://172.16.50.9'
-    extVersionCode = 1183
+    extVersionCode = 1184
 }
 
 apply from: "$rootDir/common.gradle"
