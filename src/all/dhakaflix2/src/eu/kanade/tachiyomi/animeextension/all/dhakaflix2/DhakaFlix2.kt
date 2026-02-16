@@ -482,17 +482,22 @@ class DhakaFlix2(
                 html.contains("/m/lazyload/") -> getMovieMedia(document)
                 html.contains("/s/lazyload/") -> {
                     val extracted = extractEpisodes(document)
-                    val seasonLinks = document.select("a[href*=/s/lazyload/], a[href*=dir=], a:matches((?i)Season|Special)").map { it.attr("abs:href") }.distinct()
+                    val seasonLinks = document.select("""a[href*=/s/lazyload/], a[href*=dir=], a:matches((?i)Season|Special)""").map { it.attr("abs:href") }.distinct()
                     if (seasonLinks.size > 1) {
                         val deferredEpisodes = seasonLinks.map {
                             async { 
                                 try {
                                     val seasonDoc = client.newCall(GET(fixUrl(it), headers)).execute().asJsoup()
-                                    extractEpisodes(seasonDoc)
-                                } catch (e: Exception) { emptyList<EpisodeData>() }
+                                    val seasonExtracted = extractEpisodes(seasonDoc)
+                                    if (seasonExtracted.isNotEmpty()) {
+                                        sortEpisodes(seasonExtracted)
+                                    } else {
+                                        parseDir(it, 2, seasonDoc)
+                                    }
+                                } catch (e: Exception) { emptyList<SEpisode>() }
                             }
                         }
-                        sortEpisodes(deferredEpisodes.awaitAll().flatten().distinctBy { it.videoUrl })
+                        deferredEpisodes.awaitAll().flatten().distinctBy { it.url }
                     } else if (extracted.isNotEmpty()) {
                         sortEpisodes(extracted)
                     } else {
