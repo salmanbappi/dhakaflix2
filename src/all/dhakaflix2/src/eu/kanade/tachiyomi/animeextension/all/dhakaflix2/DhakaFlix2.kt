@@ -482,12 +482,27 @@ class DhakaFlix2(
                 html.contains("/m/lazyload/") -> getMovieMedia(document)
                 html.contains("/s/lazyload/") -> {
                     val extracted = extractEpisodes(document)
-                    if (extracted.isNotEmpty()) sortEpisodes(extracted) else parseDirectoryRecursive(document)
+                    val seasonLinks = document.select("a[href*=/s/lazyload/], a[href*=dir=], a:matches((?i)Season|Special)").map { it.attr("abs:href") }.distinct()
+                    if (seasonLinks.size > 1) {
+                        val deferredEpisodes = seasonLinks.map {
+                            async { 
+                                try {
+                                    val seasonDoc = client.newCall(GET(fixUrl(it), headers)).execute().asJsoup()
+                                    extractEpisodes(seasonDoc)
+                                } catch (e: Exception) { emptyList<EpisodeData>() }
+                            }
+                        }
+                        sortEpisodes(deferredEpisodes.awaitAll().flatten().distinctBy { it.videoUrl })
+                    } else if (extracted.isNotEmpty()) {
+                        sortEpisodes(extracted)
+                    } else {
+                        parseDirectoryRecursive(document)
+                    }
                 }
                 else -> parseDirectoryRecursive(document)
             }
             if (episodes.isEmpty()) throw Exception("No results found")
-            episodes
+            episodes.distinctBy { it.url }
         } ?: emptyList()
     }
 
@@ -539,7 +554,7 @@ class DhakaFlix2(
                 })
             } else if (href.endsWith("/") || absUrl.endsWith("/")) subDirs.add(absUrl)
         }
-        if (fileEpisodes.isNotEmpty()) return fileEpisodes.sortedBy { it.name }.reversed()
+        
         val subDirEpisodes = coroutineScope {
             subDirs.map { async(Dispatchers.IO) { semaphore.withPermit { parseDir(it, depth - 1) } } }.awaitAll().flatten()
         }
