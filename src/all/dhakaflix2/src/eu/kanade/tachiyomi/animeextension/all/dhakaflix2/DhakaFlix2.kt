@@ -354,7 +354,7 @@ class DhakaFlix2(
             baseUrl.contains("50.14") -> "$serverPath/Hindi%20Movies/%282026%29/"
             baseUrl.contains("50.12") -> "$serverPath/TV-WEB-Series/TV%20Series%20%E2%99%A5%20%20A%20%20%E2%80%94%20%20L/"
             baseUrl.contains("50.9") -> "$serverPath/Anime%20%26%20Cartoon%20TV%20Series/Anime-TV%20Series%20%E2%99%A5%20%20A%20%20%E2%80%94%20%20F/"
-            baseUrl.contains("50.7") -> "$serverPath/English%20Movies/"
+            baseUrl.contains("50.7") -> "$serverPath/English%20Movies/%282026%29/"
             else -> ""
         }
         return GET("$baseUrl/$path", headers)
@@ -369,7 +369,7 @@ class DhakaFlix2(
                 SAnime.create().apply {
                     title = link.text().trim()
                     url = fixUrl(link.attr("abs:href"))
-                    val thumbElement = card.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
+                    val thumbElement = card.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb|cover|front|folder], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav])")
                     val thumbUrl = thumbElement?.let { 
                         it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
                     } ?: ""
@@ -433,12 +433,12 @@ class DhakaFlix2(
             status = if (isMovie) SAnime.COMPLETED else SAnime.ONGOING
             genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
             description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
-            val thumbElement = document.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb], img:not([src~=(?i)back|folder|parent|icon|/icons/])")
+            val thumbElement = document.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb|cover|front|folder], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav])")
             var thumbUrl = thumbElement?.let { 
                 it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
             } ?: ""
             if (thumbUrl.isEmpty()) {
-                thumbUrl = document.selectFirst("""a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|folder|parent|icon])""")?.attr("abs:href") ?: ""
+                thumbUrl = document.selectFirst("""a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|parent|icon|menu])""")?.attr("abs:href") ?: ""
             }
             if (thumbUrl.isEmpty() && response.request.url.toString().endsWith("/")) {
                 thumbUrl = getFolderThumb(response.request.url.toString())
