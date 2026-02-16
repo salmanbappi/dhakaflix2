@@ -286,7 +286,7 @@ class DhakaFlix2(
 
             for (i in 0 until searchArr.length()) {
                 val item = searchArr.getJSONObject(i)
-                val href = item.getString("href").replace('\', '/')
+                val href = item.getString("href").replace('\\', '/')
                 val cleanHrefForTitle = href.trimEnd('/')
                 val rawTitle = cleanHrefForTitle.substringAfterLast("/")
                 val title = try { URLDecoder.decode(rawTitle, "UTF-8").trim() } catch (e: Exception) { rawTitle.trim() }
