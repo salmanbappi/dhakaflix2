@@ -404,6 +404,11 @@ class DhakaFlix2(
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
         val cards = document.select("div.card")
+        
+        // Extract all file/link names in this directory once to find potential thumbs
+        val allFiles = document.select("a").map { it.attr("href") }
+        val bestThumb = allFiles.find { it.contains(Regex("a11|a_al|a0_al|poster|banner|thumb|cover|front|folder", RegexOption.IGNORE_CASE)) }
+
         val animeList = if (cards.isNotEmpty()) {
             cards.mapNotNull { card ->
                 val link = card.selectFirst("h5 a") ?: return@mapNotNull null
@@ -425,7 +430,13 @@ class DhakaFlix2(
                     SAnime.create().apply {
                         title = if (titleStr.endsWith("/")) titleStr.dropLast(1) else titleStr
                         url = fixUrl(href)
-                        thumbnail_url = if (url.endsWith("/")) getFolderThumb(url) else ""
+                        // Smart Detection: if it's a folder, check if we saw a thumb file in the same directory
+                        thumbnail_url = if (url.endsWith("/") && bestThumb != null) {
+                            val currentDir = url.substringBeforeLast("/", "") + "/"
+                            if (currentDir.isNotEmpty()) fixUrl(currentDir + bestThumb) else ""
+                        } else if (url.endsWith("/")) {
+                            getFolderThumb(url)
+                        } else ""
                     }
                 } else null
             }
@@ -474,10 +485,23 @@ class DhakaFlix2(
             status = if (isMovie) SAnime.COMPLETED else SAnime.ONGOING
             genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
             description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
+            
             val thumbElement = document.selectFirst("img[src~=(?i)a11|a_al|a0_al|poster|banner|thumb|cover|front|folder], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav])")
             var thumbUrl = thumbElement?.let { 
                 it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
             } ?: ""
+            
+            if (thumbUrl.isEmpty()) {
+                // Smart detection: look for common thumb names in all links on the page
+                val allLinks = document.select("a")
+                val foundThumb = allLinks.find { 
+                    val href = it.attr("href")
+                    href.contains(Regex("a11|a_al|a0_al|poster|banner|thumb|cover|front|folder", RegexOption.IGNORE_CASE)) &&
+                    it.attr("abs:href").contains(Regex("\\.(jpg|jpeg|png|webp|gif)", RegexOption.IGNORE_CASE))
+                }
+                thumbUrl = foundThumb?.attr("abs:href") ?: ""
+            }
+            
             if (thumbUrl.isEmpty()) {
                 thumbUrl = document.selectFirst("""a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|parent|icon|menu])""")?.attr("abs:href") ?: ""
             }
