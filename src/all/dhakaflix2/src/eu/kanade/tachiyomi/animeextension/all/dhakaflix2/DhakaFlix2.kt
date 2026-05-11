@@ -179,9 +179,9 @@ class DhakaFlix2(
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
 
         withContext(Dispatchers.IO) {
-            withTimeoutOrNull(20000) {
+            withTimeoutOrNull(30000) {
                 coroutineScope {
-                    animes.take(25).map { anime ->
+                    animes.take(60).map { anime ->
                         async {
                             enrichmentSemaphore.withPermit {
                                 // 1. Try TMDb first if enabled
@@ -198,14 +198,12 @@ class DhakaFlix2(
                                     val doc = client.newCall(GET(fixUrl(anime.url), headers)).execute().asJsoup()
                                     val allLinks = doc.select("a")
                                     
-                                    // Look for known standards
                                     val foundThumb = allLinks.find { 
                                         val href = it.attr("href").lowercase()
                                         href.contains(Regex("a11|a22|a_al|a0_al|poster|banner|thumb|cover|front|folder")) &&
                                         (href.endsWith(".jpg") || href.endsWith(".jpeg") || href.endsWith(".png") || href.endsWith(".webp"))
                                     }
                                     
-                                    // Fallback to first available image
                                     val firstAnyImage = if (foundThumb == null) {
                                         allLinks.find { 
                                             val href = it.attr("href").lowercase()
