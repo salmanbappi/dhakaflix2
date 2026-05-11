@@ -337,6 +337,9 @@ class DhakaFlix2(
     private fun isIgnored(text: String, query: String = ""): Boolean {
         val ignored = listOf("Parent Directory", "modern browsers", "Name", "Last modified", "Size", "Description", "Index of", "JavaScript", "powered by", "_h5ai")
         if (ignored.any { text.contains(it, ignoreCase = true) }) return true
+        
+        if (query.isEmpty()) return false
+
         val uploaderTags = listOf("-Pahe", "-QxR", "-YIFY", "-RARBG")
         if (uploaderTags.any { text.endsWith(it, ignoreCase = true) || text.contains("$it.") || text.contains("$it ") }) {
             val cleanQuery = query.trim().removePrefix("-")
@@ -554,8 +557,9 @@ class DhakaFlix2(
             if (isVideoFile(href)) {
                 fileEpisodes.add(SEpisode.create().apply {
                     this.url = absUrl
-                    this.name = try { URLDecoder.decode(text, "UTF-8") } catch(e:Exception) { text }
-                    this.episode_number = -1f
+                    val decodedName = try { URLDecoder.decode(text, "UTF-8") } catch(e:Exception) { text }
+                    this.name = decodedName
+                    this.episode_number = parseEpisodeNumber(decodedName)
                 })
             } else if (href.endsWith("/") || absUrl.endsWith("/")) subDirs.add(absUrl)
         }
