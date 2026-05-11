@@ -153,7 +153,9 @@ class DhakaFlix2(
         u = DOUBLE_PROTOCOL_REGEX.replace(u, "http$1://")
         u = u.replace(":://://", ":://")
         u = MULTI_SLASH_REGEX.replace(u, "/")
-        return u.replace(" ", "%20").replace("&", "%26")
+        
+        // Use HttpUrl to properly encode special characters while preserving existing encodings
+        return u.toHttpUrlOrNull()?.toString() ?: u.replace(" ", "%20").replace("&", "%26")
     }
 
     private val enrichmentSemaphore = Semaphore(5)
@@ -405,10 +407,6 @@ class DhakaFlix2(
         val document = response.asJsoup()
         val cards = document.select("div.card")
         
-        // Extract all file/link names in this directory once to find potential thumbs
-        val allFiles = document.select("a").map { it.attr("href") }
-        val bestThumb = allFiles.find { it.contains(Regex("a11|a_al|a0_al|poster|banner|thumb|cover|front|folder", RegexOption.IGNORE_CASE)) }
-
         val animeList = if (cards.isNotEmpty()) {
             cards.mapNotNull { card ->
                 val link = card.selectFirst("h5 a") ?: return@mapNotNull null
@@ -430,13 +428,7 @@ class DhakaFlix2(
                     SAnime.create().apply {
                         title = if (titleStr.endsWith("/")) titleStr.dropLast(1) else titleStr
                         url = fixUrl(href)
-                        // Smart Detection: if it's a folder, check if we saw a thumb file in the same directory
-                        thumbnail_url = if (url.endsWith("/") && bestThumb != null) {
-                            val currentDir = url.substringBeforeLast("/", "") + "/"
-                            if (currentDir.isNotEmpty()) fixUrl(currentDir + bestThumb) else ""
-                        } else if (url.endsWith("/")) {
-                            getFolderThumb(url)
-                        } else ""
+                        thumbnail_url = if (url.endsWith("/")) getFolderThumb(url) else ""
                     }
                 } else null
             }
