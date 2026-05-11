@@ -82,7 +82,12 @@ class DhakaFlix2(
     private inner class ImageInterceptor : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
             val request = chain.request()
-            var response = chain.proceed(request)
+            val imageHeaders = request.headers.newBuilder()
+                .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+                .set("Referer", baseUrl)
+                .build()
+            
+            var response = chain.proceed(request.newBuilder().headers(imageHeaders).build())
             if (response.isSuccessful) return response
 
             val markers = listOf(IMAGE_PROBE_MARKER, IMAGE_PROBE_MARKER_2, IMAGE_PROBE_MARKER_3, IMAGE_PROBE_MARKER_4, IMAGE_PROBE_MARKER_5, FALLBACK_IMAGE)
@@ -92,7 +97,7 @@ class DhakaFlix2(
                 if (currentUrl.contains(markers[i])) {
                     response.close()
                     currentUrl = currentUrl.replace(markers[i], markers[i + 1])
-                    response = chain.proceed(request.newBuilder().url(fixUrl(currentUrl)).build())
+                    response = chain.proceed(request.newBuilder().url(fixUrl(currentUrl)).headers(imageHeaders).build())
                     if (response.isSuccessful) return response
                 }
             }
@@ -151,7 +156,8 @@ class DhakaFlix2(
         for (c in u) {
             if (c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || 
                 c == '/' || c == ':' || c == '.' || c == '-' || c == '_' || c == '~' || 
-                c == '%' || c == '?' || c == '=' || c == '#' || c == '@' || c == '+' || c == ','
+                c == '%' || c == '?' || c == '=' || c == '#' || c == '@' || c == '+' || c == ',' ||
+                c == '&' || c == '(' || c == ')' || c == '[' || c == ']' || c == '\'' || c == '!' || c == '*' || c == ';'
             ) {
                 sb.append(c)
             } else {
@@ -442,6 +448,12 @@ class DhakaFlix2(
         val document = response.asJsoup()
         val cards = document.select("div.card")
         
+        // Extract all image links from this page once
+        val pageImageLinks = document.select("a").filter { 
+            val href = it.attr("href").lowercase()
+            href.endsWith(".jpg") || href.endsWith(".jpeg") || href.endsWith(".png") || href.endsWith(".webp")
+        }
+
         val animeList = if (cards.isNotEmpty()) {
             cards.mapNotNull { card ->
                 val link = card.selectFirst("h5 a") ?: return@mapNotNull null
@@ -463,7 +475,16 @@ class DhakaFlix2(
                     SAnime.create().apply {
                         title = if (titleStr.endsWith("/")) titleStr.dropLast(1) else titleStr
                         url = fixUrl(href)
-                        thumbnail_url = if (url.endsWith("/")) getFolderThumb(url) else ""
+                        
+                        // UNIVERSAL SMART DETECTION: Look for an image in the SAME directory
+                        val currentDir = if (href.endsWith("/")) href else href.substringBeforeLast("/") + "/"
+                        val foundThumb = pageImageLinks.find { 
+                            val imgHref = it.attr("abs:href")
+                            imgHref.startsWith(currentDir) && 
+                            imgHref.lowercase().contains(Regex("a11|a22|a_al|a0_al|a_vl|a0_vl"))
+                        } ?: pageImageLinks.find { it.attr("abs:href").startsWith(currentDir) }
+                        
+                        thumbnail_url = if (foundThumb != null) fixUrl(foundThumb.attr("abs:href")) else getFolderThumb(url)
                     }
                 } else null
             }
