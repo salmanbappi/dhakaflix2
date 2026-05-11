@@ -500,13 +500,26 @@ class DhakaFlix2(
             
             // 2. TRUE SMART DETECTION: Look for thumbnail files in the links list (h5ai fallback)
             if (thumbUrl.isEmpty()) {
-                val foundThumb = document.select("a").find { 
+                val allLinks = document.select("a")
+                
+                // Try to find known good names first
+                val foundThumb = allLinks.find { 
                     val href = it.attr("href").lowercase()
                     href.contains(Regex("a11|a22|a_al|a0_al|poster|banner|thumb|cover|front|folder")) &&
                     (href.endsWith(".jpg") || href.endsWith(".jpeg") || href.endsWith(".png") || href.endsWith(".webp"))
                 }
+                
+                // If no known name, just take the FIRST image link available (excluding icons/parent)
+                val firstAnyImage = if (foundThumb == null) {
+                    allLinks.find { 
+                        val href = it.attr("href").lowercase()
+                        (href.endsWith(".jpg") || href.endsWith(".jpeg") || href.endsWith(".png") || href.endsWith(".webp")) &&
+                        !href.contains(Regex("parent|icon|menu|nav|/_h5ai/"))
+                    }
+                } else null
+                
                 // USE abs:href DIRECTLY - Do NOT pass through fixUrl to avoid re-encoding issues
-                thumbUrl = foundThumb?.attr("abs:href") ?: ""
+                thumbUrl = (foundThumb ?: firstAnyImage)?.attr("abs:href") ?: ""
             }
             
             // 3. Last resort - fallback guessing
