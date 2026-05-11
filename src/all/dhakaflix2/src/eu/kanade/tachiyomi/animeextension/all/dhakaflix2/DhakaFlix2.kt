@@ -82,22 +82,34 @@ class DhakaFlix2(
     private inner class ImageInterceptor : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
             val request = chain.request()
+            val url = request.url.toString()
+            
+            // Dynamic Referer: Provie the image's own parent directory to bypass hotlink protection
+            val parentFolder = if (url.contains("/")) url.substringBeforeLast("/") + "/" else baseUrl
+            
             val imageHeaders = request.headers.newBuilder()
                 .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-                .set("Referer", baseUrl)
+                .set("Referer", parentFolder)
                 .build()
             
             var response = chain.proceed(request.newBuilder().headers(imageHeaders).build())
             if (response.isSuccessful) return response
 
             val markers = listOf(IMAGE_PROBE_MARKER, IMAGE_PROBE_MARKER_2, IMAGE_PROBE_MARKER_3, IMAGE_PROBE_MARKER_4, IMAGE_PROBE_MARKER_5, FALLBACK_IMAGE)
-            var currentUrl = request.url.toString()
+            var currentUrl = url
 
             for (i in 0 until markers.size - 1) {
                 if (currentUrl.contains(markers[i])) {
                     response.close()
                     currentUrl = currentUrl.replace(markers[i], markers[i + 1])
-                    response = chain.proceed(request.newBuilder().url(fixUrl(currentUrl)).headers(imageHeaders).build())
+                    val fallbackParent = if (currentUrl.contains("/")) currentUrl.substringBeforeLast("/") + "/" else baseUrl
+                    response = chain.proceed(
+                        request.newBuilder()
+                            .url(fixUrl(currentUrl))
+                            .header("Referer", fallbackParent)
+                            .headers(imageHeaders)
+                            .build()
+                    )
                     if (response.isSuccessful) return response
                 }
             }
