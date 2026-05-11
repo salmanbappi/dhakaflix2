@@ -492,29 +492,33 @@ class DhakaFlix2(
             genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
             description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
             
-            val thumbElement = document.selectFirst("img[src~=(?i)a11|a_al|a0_al|poster|banner|thumb|cover|front|folder], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav])")
+            // 1. Look for images already rendered as tags
+            val thumbElement = document.selectFirst("img[src~=(?i)a11|a22|a_al|a0_al|poster|banner|thumb|cover|front|folder], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav])")
             var thumbUrl = thumbElement?.let { 
                 it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
             } ?: ""
             
+            // 2. TRUE SMART DETECTION: Look for thumbnail files in the links list (h5ai fallback)
             if (thumbUrl.isEmpty()) {
-                // Smart detection: look for common thumb names in all links on the page
-                val allLinks = document.select("a")
-                val foundThumb = allLinks.find { 
-                    val href = it.attr("href")
-                    href.contains(Regex("a11|a_al|a0_al|poster|banner|thumb|cover|front|folder", RegexOption.IGNORE_CASE)) &&
-                    it.attr("abs:href").contains(Regex("\\.(jpg|jpeg|png|webp|gif)", RegexOption.IGNORE_CASE))
+                val foundThumb = document.select("a").find { 
+                    val href = it.attr("href").lowercase()
+                    href.contains(Regex("a11|a22|a_al|a0_al|poster|banner|thumb|cover|front|folder")) &&
+                    (href.endsWith(".jpg") || href.endsWith(".jpeg") || href.endsWith(".png") || href.endsWith(".webp"))
                 }
+                // USE abs:href DIRECTLY - Do NOT pass through fixUrl to avoid re-encoding issues
                 thumbUrl = foundThumb?.attr("abs:href") ?: ""
             }
             
+            // 3. Last resort - fallback guessing
             if (thumbUrl.isEmpty()) {
                 thumbUrl = document.selectFirst("""a[href~=(?i)\.(jpg|jpeg|png|webp)]:not([href~=(?i)back|parent|icon|menu])""")?.attr("abs:href") ?: ""
             }
             if (thumbUrl.isEmpty() && response.request.url.toString().endsWith("/")) {
                 thumbUrl = getFolderThumb(response.request.url.toString())
             }
-            thumbnail_url = if (thumbUrl.isNotEmpty()) fixUrl(thumbUrl) else ""
+            
+            // Only fixUrl if it was a guessed or non-absolute URL
+            thumbnail_url = if (thumbUrl.startsWith("http")) thumbUrl else if (thumbUrl.isNotEmpty()) fixUrl(thumbUrl) else ""
         }
     }
 
