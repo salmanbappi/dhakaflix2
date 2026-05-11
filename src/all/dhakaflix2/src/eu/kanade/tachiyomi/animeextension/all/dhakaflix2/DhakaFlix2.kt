@@ -151,8 +151,7 @@ class DhakaFlix2(
         for (c in u) {
             if (c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || 
                 c == '/' || c == ':' || c == '.' || c == '-' || c == '_' || c == '~' || 
-                c == '%' || c == '?' || c == '=' || c == '#' || c == '@' || c == '+' || c == ',' ||
-                c == '&' || c == '(' || c == ')' || c == '[' || c == ']' || c == '\'' || c == '!' || c == '*' || c == ';'
+                c == '%' || c == '?' || c == '=' || c == '#' || c == '@' || c == '+' || c == ','
             ) {
                 sb.append(c)
             } else {
@@ -553,8 +552,7 @@ class DhakaFlix2(
                 thumbUrl = getFolderThumb(response.request.url.toString())
             }
             
-            // Only fixUrl if it was a guessed or non-absolute URL
-            thumbnail_url = if (thumbUrl.startsWith("http")) thumbUrl else if (thumbUrl.isNotEmpty()) fixUrl(thumbUrl) else ""
+            thumbnail_url = if (thumbUrl.isNotEmpty()) fixUrl(thumbUrl) else ""
         }
     }
 
