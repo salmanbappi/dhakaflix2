@@ -176,18 +176,49 @@ class DhakaFlix2(
 
     private suspend fun enrichAnimes(animes: List<SAnime>) {
         val useTmdb = preferences.getBoolean(PREF_USE_TMDB_COVERS, false)
-        if (!useTmdb) return
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
-        if (apiKey.isBlank()) return
 
         withContext(Dispatchers.IO) {
-            withTimeoutOrNull(10000) {
+            withTimeoutOrNull(20000) {
                 coroutineScope {
-                    animes.take(40).map { anime ->
+                    animes.take(25).map { anime ->
                         async {
                             enrichmentSemaphore.withPermit {
-                                val tmdbCover = fetchTmdbImage(anime.title)
-                                if (tmdbCover != null) anime.thumbnail_url = tmdbCover
+                                // 1. Try TMDb first if enabled
+                                if (useTmdb && apiKey.isNotBlank()) {
+                                    val tmdbCover = fetchTmdbImage(anime.title)
+                                    if (tmdbCover != null) {
+                                        anime.thumbnail_url = tmdbCover
+                                        return@withPermit
+                                    }
+                                }
+                                
+                                // 2. SMART RESOLVE: Fetch folder HTML to find the REAL image name
+                                try {
+                                    val doc = client.newCall(GET(fixUrl(anime.url), headers)).execute().asJsoup()
+                                    val allLinks = doc.select("a")
+                                    
+                                    // Look for known standards
+                                    val foundThumb = allLinks.find { 
+                                        val href = it.attr("href").lowercase()
+                                        href.contains(Regex("a11|a22|a_al|a0_al|poster|banner|thumb|cover|front|folder")) &&
+                                        (href.endsWith(".jpg") || href.endsWith(".jpeg") || href.endsWith(".png") || href.endsWith(".webp"))
+                                    }
+                                    
+                                    // Fallback to first available image
+                                    val firstAnyImage = if (foundThumb == null) {
+                                        allLinks.find { 
+                                            val href = it.attr("href").lowercase()
+                                            (href.endsWith(".jpg") || href.endsWith(".jpeg") || href.endsWith(".png") || href.endsWith(".webp")) &&
+                                            !href.contains(Regex("parent|icon|menu|nav|/_h5ai/"))
+                                        }
+                                    } else null
+                                    
+                                    val finalThumbUrl = (foundThumb ?: firstAnyImage)?.attr("abs:href") ?: ""
+                                    if (finalThumbUrl.isNotEmpty()) {
+                                        anime.thumbnail_url = finalThumbUrl
+                                    }
+                                } catch (e: Exception) {}
                             }
                         }
                     }.awaitAll()
