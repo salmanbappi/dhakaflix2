@@ -46,7 +46,9 @@ private const val PREF_TMDB_API_KEY = "tmdb_api_key"
 private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
 private const val IMAGE_PROBE_MARKER = "a_AL_.jpg"
 private const val IMAGE_PROBE_MARKER_2 = "a0_AL_.jpg"
-private const val FALLBACK_IMAGE = "a11.jpg"
+private const val IMAGE_PROBE_MARKER_3 = "a11.jpg"
+private const val IMAGE_PROBE_MARKER_4 = "a22.jpg"
+private const val FALLBACK_IMAGE = "poster.jpg"
 
 private val IP_HTTP_REGEX = Regex("""(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*http""")
 private val DOUBLE_PROTOCOL_REGEX = Regex("""http(s)?://http(s)?://""")
@@ -91,7 +93,17 @@ class DhakaFlix2(
                 }
                 url.contains(IMAGE_PROBE_MARKER_2) -> {
                     response.close()
-                    val newUrl = url.replace(IMAGE_PROBE_MARKER_2, FALLBACK_IMAGE)
+                    val newUrl = url.replace(IMAGE_PROBE_MARKER_2, IMAGE_PROBE_MARKER_3)
+                    chain.proceed(request.newBuilder().url(newUrl).build())
+                }
+                url.contains(IMAGE_PROBE_MARKER_3) -> {
+                    response.close()
+                    val newUrl = url.replace(IMAGE_PROBE_MARKER_3, IMAGE_PROBE_MARKER_4)
+                    chain.proceed(request.newBuilder().url(newUrl).build())
+                }
+                url.contains(IMAGE_PROBE_MARKER_4) -> {
+                    response.close()
+                    val newUrl = url.replace(IMAGE_PROBE_MARKER_4, FALLBACK_IMAGE)
                     chain.proceed(request.newBuilder().url(newUrl).build())
                 }
                 else -> response
@@ -154,17 +166,21 @@ class DhakaFlix2(
         u = u.replace(":://://", ":://")
         u = MULTI_SLASH_REGEX.replace(u, "/")
         
-        // Manual safe encoding to avoid double-encoding % characters
-        return u.replace(" ", "%20")
-            .replace("&", "%26")
-            .replace("♥", "%E2%99%A5")
-            .replace("—", "%E2%80%94")
-            .replace("–", "%E2%80%93")
-            .replace("♦", "%E2%99%A6")
-            .replace("♣", "%E2%99%A3")
-            .replace("♠", "%E2%99%A0")
-            .replace("★", "%E2%98%85")
-            .replace("♦", "%E2%99%A6")
+        val sb = StringBuilder()
+        for (c in u) {
+            if (c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || 
+                c == '/' || c == ':' || c == '.' || c == '-' || c == '_' || c == '~' || 
+                c == '%' || c == '?' || c == '=' || c == '&' || c == '#' || c == '@' || c == '+' || c == ','
+            ) {
+                sb.append(c)
+            } else {
+                val bytes = c.toString().toByteArray(Charsets.UTF_8)
+                for (b in bytes) {
+                    sb.append(String.format("%%%02X", b))
+                }
+            }
+        }
+        return sb.toString()
     }
 
     private val enrichmentSemaphore = Semaphore(5)
