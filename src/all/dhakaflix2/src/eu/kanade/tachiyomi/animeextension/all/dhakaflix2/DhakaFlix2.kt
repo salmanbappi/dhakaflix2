@@ -154,8 +154,17 @@ class DhakaFlix2(
         u = u.replace(":://://", ":://")
         u = MULTI_SLASH_REGEX.replace(u, "/")
         
-        // Use HttpUrl to properly encode special characters while preserving existing encodings
-        return u.toHttpUrlOrNull()?.toString() ?: u.replace(" ", "%20").replace("&", "%26")
+        // Manual safe encoding to avoid double-encoding % characters
+        return u.replace(" ", "%20")
+            .replace("&", "%26")
+            .replace("♥", "%E2%99%A5")
+            .replace("—", "%E2%80%94")
+            .replace("–", "%E2%80%93")
+            .replace("♦", "%E2%99%A6")
+            .replace("♣", "%E2%99%A3")
+            .replace("♠", "%E2%99%A0")
+            .replace("★", "%E2%98%85")
+            .replace("♦", "%E2%99%A6")
     }
 
     private val enrichmentSemaphore = Semaphore(5)
