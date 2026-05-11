@@ -81,33 +81,21 @@ class DhakaFlix2(
     private inner class ImageInterceptor : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
             val request = chain.request()
-            val response = chain.proceed(request)
+            var response = chain.proceed(request)
             if (response.isSuccessful) return response
 
-            val url = request.url.toString()
-            return when {
-                url.contains(IMAGE_PROBE_MARKER) -> {
+            val markers = listOf(IMAGE_PROBE_MARKER, IMAGE_PROBE_MARKER_2, IMAGE_PROBE_MARKER_3, IMAGE_PROBE_MARKER_4, FALLBACK_IMAGE)
+            var currentUrl = request.url.toString()
+
+            for (i in 0 until markers.size - 1) {
+                if (currentUrl.contains(markers[i])) {
                     response.close()
-                    val newUrl = url.replace(IMAGE_PROBE_MARKER, IMAGE_PROBE_MARKER_2)
-                    chain.proceed(request.newBuilder().url(newUrl).build())
+                    currentUrl = currentUrl.replace(markers[i], markers[i + 1])
+                    response = chain.proceed(request.newBuilder().url(currentUrl).build())
+                    if (response.isSuccessful) return response
                 }
-                url.contains(IMAGE_PROBE_MARKER_2) -> {
-                    response.close()
-                    val newUrl = url.replace(IMAGE_PROBE_MARKER_2, IMAGE_PROBE_MARKER_3)
-                    chain.proceed(request.newBuilder().url(newUrl).build())
-                }
-                url.contains(IMAGE_PROBE_MARKER_3) -> {
-                    response.close()
-                    val newUrl = url.replace(IMAGE_PROBE_MARKER_3, IMAGE_PROBE_MARKER_4)
-                    chain.proceed(request.newBuilder().url(newUrl).build())
-                }
-                url.contains(IMAGE_PROBE_MARKER_4) -> {
-                    response.close()
-                    val newUrl = url.replace(IMAGE_PROBE_MARKER_4, FALLBACK_IMAGE)
-                    chain.proceed(request.newBuilder().url(newUrl).build())
-                }
-                else -> response
             }
+            return response
         }
     }
 
@@ -171,8 +159,7 @@ class DhakaFlix2(
             if (c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || 
                 c == '/' || c == ':' || c == '.' || c == '-' || c == '_' || c == '~' || 
                 c == '%' || c == '?' || c == '=' || c == '&' || c == '#' || c == '@' || 
-                c == '+' || c == ',' || c == '(' || c == ')' || c == '[' || c == ']' ||
-                c == '!' || c == '\'' || c == '*' || c == ';'
+                c == '+' || c == ','
             ) {
                 sb.append(c)
             } else {
