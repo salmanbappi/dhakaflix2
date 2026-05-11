@@ -45,6 +45,7 @@ import java.util.concurrent.TimeUnit
 private const val PREF_TMDB_API_KEY = "tmdb_api_key"
 private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
 private const val IMAGE_PROBE_MARKER = "a_AL_.jpg"
+private const val IMAGE_PROBE_MARKER_2 = "a0_AL_.jpg"
 private const val FALLBACK_IMAGE = "a11.jpg"
 
 private val IP_HTTP_REGEX = Regex("""(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*http""")
@@ -79,12 +80,22 @@ class DhakaFlix2(
         override fun intercept(chain: Interceptor.Chain): Response {
             val request = chain.request()
             val response = chain.proceed(request)
-            if (response.isSuccessful || !request.url.toString().contains(IMAGE_PROBE_MARKER)) {
-                return response
+            if (response.isSuccessful) return response
+
+            val url = request.url.toString()
+            return when {
+                url.contains(IMAGE_PROBE_MARKER) -> {
+                    response.close()
+                    val newUrl = url.replace(IMAGE_PROBE_MARKER, IMAGE_PROBE_MARKER_2)
+                    chain.proceed(request.newBuilder().url(newUrl).build())
+                }
+                url.contains(IMAGE_PROBE_MARKER_2) -> {
+                    response.close()
+                    val newUrl = url.replace(IMAGE_PROBE_MARKER_2, FALLBACK_IMAGE)
+                    chain.proceed(request.newBuilder().url(newUrl).build())
+                }
+                else -> response
             }
-            response.close()
-            val newUrl = request.url.toString().replace(IMAGE_PROBE_MARKER, FALLBACK_IMAGE)
-            return chain.proceed(request.newBuilder().url(newUrl).build())
         }
     }
 
@@ -399,7 +410,7 @@ class DhakaFlix2(
                 SAnime.create().apply {
                     title = link.text().trim()
                     url = fixUrl(link.attr("abs:href"))
-                    val thumbElement = card.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb|cover|front|folder], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav])")
+                    val thumbElement = card.selectFirst("img[src~=(?i)a11|a_al|a0_al|poster|banner|thumb|cover|front|folder], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav])")
                     val thumbUrl = thumbElement?.let { 
                         it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
                     } ?: ""
@@ -463,7 +474,7 @@ class DhakaFlix2(
             status = if (isMovie) SAnime.COMPLETED else SAnime.ONGOING
             genre = document.select("div.ganre-wrapper a").joinToString { it.text().replace(",", "").trim() }
             description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
-            val thumbElement = document.selectFirst("img[src~=(?i)a11|a_al|poster|banner|thumb|cover|front|folder], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav])")
+            val thumbElement = document.selectFirst("img[src~=(?i)a11|a_al|a0_al|poster|banner|thumb|cover|front|folder], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav])")
             var thumbUrl = thumbElement?.let { 
                 it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
             } ?: ""
