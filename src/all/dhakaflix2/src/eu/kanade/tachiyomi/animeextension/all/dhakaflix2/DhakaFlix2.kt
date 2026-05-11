@@ -113,7 +113,7 @@ class DhakaFlix2(
     private val cacheTime = mutableMapOf<String, Long>()
 
     override fun headersBuilder() = super.headersBuilder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         EditTextPreference(screen.context).apply {
@@ -460,7 +460,7 @@ class DhakaFlix2(
                 SAnime.create().apply {
                     title = link.text().trim()
                     url = fixUrl(link.attr("abs:href"))
-                    val thumbElement = card.selectFirst("img[src~=(?i)a11|a22|a_al|a0_al|a_vl|a0_vl], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav])")
+                    val thumbElement = card.selectFirst("img[src~=(?i)a11|a22|a_al|a0_al|a_vl|a0_vl], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav|folder|fallback|/_h5ai/])")
                     val thumbUrl = thumbElement?.let { 
                         it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
                     } ?: ""
@@ -535,7 +535,7 @@ class DhakaFlix2(
             description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
             
             // 1. Look for images already rendered as tags
-            val thumbElement = document.selectFirst("img[src~=(?i)a11|a22|a_al|a0_al|a_vl|a0_vl], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav])")
+            val thumbElement = document.selectFirst("img[src~=(?i)a11|a22|a_al|a0_al|a_vl|a0_vl], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav|folder|fallback|/_h5ai/])")
 
             var thumbUrl = thumbElement?.let { 
                 it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
