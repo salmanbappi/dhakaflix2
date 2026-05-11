@@ -92,7 +92,7 @@ class DhakaFlix2(
                 if (currentUrl.contains(markers[i])) {
                     response.close()
                     currentUrl = currentUrl.replace(markers[i], markers[i + 1])
-                    response = chain.proceed(request.newBuilder().url(currentUrl).build())
+                    response = chain.proceed(request.newBuilder().url(fixUrl(currentUrl)).build())
                     if (response.isSuccessful) return response
                 }
             }
@@ -148,12 +148,11 @@ class DhakaFlix2(
         val u = url.trim()
         
         val sb = StringBuilder()
-        var i = 0
-        while (i < u.length) {
-            val c = u[i]
+        for (c in u) {
             if (c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || 
                 c == '/' || c == ':' || c == '.' || c == '-' || c == '_' || c == '~' || 
-                c == '%' || c == '?' || c == '=' || c == '#' || c == '@' || c == '+' || c == ','
+                c == '%' || c == '?' || c == '=' || c == '#' || c == '@' || c == '+' || c == ',' ||
+                c == '&' || c == '(' || c == ')' || c == '[' || c == ']' || c == '\'' || c == '!' || c == '*' || c == ';'
             ) {
                 sb.append(c)
             } else {
@@ -162,7 +161,6 @@ class DhakaFlix2(
                     sb.append(String.format("%%%02X", b))
                 }
             }
-            i++
         }
         return sb.toString()
     }
