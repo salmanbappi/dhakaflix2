@@ -93,7 +93,7 @@ class DhakaFlix2(
                 .build()
             
             var response = chain.proceed(request.newBuilder().headers(imageHeaders).build())
-            if (response.isSuccessful) return response
+            if (response.isSuccessful && response.header("Content-Type")?.startsWith("image") == true) return response
 
             val markers = listOf(IMAGE_PROBE_MARKER, IMAGE_PROBE_MARKER_2, IMAGE_PROBE_MARKER_3, IMAGE_PROBE_MARKER_4, IMAGE_PROBE_MARKER_5, FALLBACK_IMAGE)
             var currentUrl = url
@@ -110,7 +110,7 @@ class DhakaFlix2(
                             .headers(imageHeaders)
                             .build()
                     )
-                    if (response.isSuccessful) return response
+                    if (response.isSuccessful && response.header("Content-Type")?.startsWith("image") == true) return response
                 }
             }
             return response
@@ -501,6 +501,7 @@ class DhakaFlix2(
                 } else null
             }
         }
+        runBlocking { enrichAnimes(animeList) }
         return AnimesPage(animeList, false)
     }
 
