@@ -144,22 +144,15 @@ class DhakaFlix2(
 
     private fun fixUrl(url: String): String {
         if (url.isBlank()) return url
-        var u = url.trim()
-        val lastHttp = u.lastIndexOf("http://", ignoreCase = true)
-        val lastHttps = u.lastIndexOf("https://", ignoreCase = true)
-        val lastProtocol = if (lastHttp > lastHttps) lastHttp else lastHttps
-        if (lastProtocol > 0) u = u.substring(lastProtocol)
-        u = IP_HTTP_REGEX.replace(u, "$1/http")
-        u = DOUBLE_PROTOCOL_REGEX.replace(u, "http$1://")
-        u = u.replace(":://://", ":://")
-        u = MULTI_SLASH_REGEX.replace(u, "/")
+        val u = url.trim()
         
         val sb = StringBuilder()
-        for (c in u) {
+        var i = 0
+        while (i < u.length) {
+            val c = u[i]
             if (c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || 
                 c == '/' || c == ':' || c == '.' || c == '-' || c == '_' || c == '~' || 
-                c == '%' || c == '?' || c == '=' || c == '&' || c == '#' || c == '@' || 
-                c == '+' || c == ','
+                c == '%' || c == '?' || c == '=' || c == '#' || c == '@' || c == '+' || c == ','
             ) {
                 sb.append(c)
             } else {
@@ -168,6 +161,7 @@ class DhakaFlix2(
                     sb.append(String.format("%%%02X", b))
                 }
             }
+            i++
         }
         return sb.toString()
     }
@@ -179,9 +173,9 @@ class DhakaFlix2(
         val apiKey = preferences.getString(PREF_TMDB_API_KEY, "") ?: ""
 
         withContext(Dispatchers.IO) {
-            withTimeoutOrNull(30000) {
+            withTimeoutOrNull(20000) {
                 coroutineScope {
-                    animes.take(60).map { anime ->
+                    animes.take(25).map { anime ->
                         async {
                             enrichmentSemaphore.withPermit {
                                 // 1. Try TMDb first if enabled
@@ -214,7 +208,7 @@ class DhakaFlix2(
                                     
                                     val finalThumbUrl = (foundThumb ?: firstAnyImage)?.attr("abs:href") ?: ""
                                     if (finalThumbUrl.isNotEmpty()) {
-                                        anime.thumbnail_url = finalThumbUrl
+                                        anime.thumbnail_url = fixUrl(finalThumbUrl)
                                     }
                                 } catch (e: Exception) {}
                             }
