@@ -14,3 +14,7 @@ android {
         applicationId = "eu.kanade.tachiyomi.animeextension"
     }
 }
+
+dependencies {
+    implementation(libs.coroutines.core)
+}
