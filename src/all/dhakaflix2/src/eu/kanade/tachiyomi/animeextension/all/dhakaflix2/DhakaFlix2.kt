@@ -46,10 +46,13 @@ private const val PREF_TMDB_API_KEY = "tmdb_api_key"
 private const val PREF_USE_TMDB_COVERS = "use_tmdb_covers"
 private const val IMAGE_PROBE_MARKER = "a_AL_.jpg"
 private const val IMAGE_PROBE_MARKER_2 = "a_VL_.jpg"
-private const val IMAGE_PROBE_MARKER_3 = "a0_AL_.jpg"
-private const val IMAGE_PROBE_MARKER_4 = "a0_VL_.jpg"
-private const val IMAGE_PROBE_MARKER_5 = "a11.jpg"
-private const val FALLBACK_IMAGE = "a22.jpg"
+private const val IMAGE_PROBE_MARKER_3 = "a_V1_.jpg"
+private const val IMAGE_PROBE_MARKER_4 = "a0_AL_.jpg"
+private const val IMAGE_PROBE_MARKER_5 = "a0_VL_.jpg"
+private const val IMAGE_PROBE_MARKER_6 = "a11.jpg"
+private const val IMAGE_PROBE_MARKER_7 = "a22.jpg"
+private const val IMAGE_PROBE_MARKER_8 = "a4e.jpg"
+private const val FALLBACK_IMAGE = "poster.jpg"
 
 private val IP_HTTP_REGEX = Regex("""(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*http""")
 private val DOUBLE_PROTOCOL_REGEX = Regex("""http(s)?://http(s)?://""")
@@ -95,7 +98,7 @@ class DhakaFlix2(
             var response = chain.proceed(request.newBuilder().headers(imageHeaders).build())
             if (response.isSuccessful && response.header("Content-Type")?.startsWith("image") == true) return response
 
-            val markers = listOf(IMAGE_PROBE_MARKER, IMAGE_PROBE_MARKER_2, IMAGE_PROBE_MARKER_3, IMAGE_PROBE_MARKER_4, IMAGE_PROBE_MARKER_5, FALLBACK_IMAGE)
+            val markers = listOf(IMAGE_PROBE_MARKER, IMAGE_PROBE_MARKER_2, IMAGE_PROBE_MARKER_3, IMAGE_PROBE_MARKER_4, IMAGE_PROBE_MARKER_5, IMAGE_PROBE_MARKER_6, IMAGE_PROBE_MARKER_7, IMAGE_PROBE_MARKER_8, FALLBACK_IMAGE)
             var currentUrl = url
 
             for (i in 0 until markers.size - 1) {
@@ -216,7 +219,7 @@ class DhakaFlix2(
                                     
                                     val foundThumb = allLinks.find { 
                                         val href = it.attr("href").lowercase()
-                                        href.contains(Regex("a11|a22|a_al|a0_al|a_vl|a0_vl")) &&
+                                        href.contains(Regex("a11|a22|a4e|a_al|a0_al|a_vl|a0_vl|a_v1")) &&
                                         (href.endsWith(".jpg") || href.endsWith(".jpeg") || href.endsWith(".png") || href.endsWith(".webp"))
                                     }
                                     
@@ -478,7 +481,7 @@ class DhakaFlix2(
                 SAnime.create().apply {
                     title = link.text().trim()
                     url = fixUrl(link.attr("abs:href"))
-                    val thumbElement = card.selectFirst("img[src~=(?i)a11|a22|a_al|a0_al|a_vl|a0_vl], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav|folder|fallback|/_h5ai/])")
+                    val thumbElement = card.selectFirst("img[src~=(?i)a11|a22|a4e|a_al|a0_al|a_vl|a0_vl|a_v1], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav|folder|fallback|/_h5ai/])")
                     val thumbUrl = thumbElement?.let { 
                         it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
                     } ?: ""
@@ -499,7 +502,7 @@ class DhakaFlix2(
                         val foundThumb = pageImageLinks.find { 
                             val imgHref = it.attr("abs:href")
                             imgHref.startsWith(currentDir) && 
-                            imgHref.lowercase().contains(Regex("a11|a22|a_al|a0_al|a_vl|a0_vl"))
+                            imgHref.lowercase().contains(Regex("a11|a22|a4e|a_al|a0_al|a_vl|a0_vl|a_v1"))
                         } ?: pageImageLinks.find { it.attr("abs:href").startsWith(currentDir) }
                         
                         thumbnail_url = if (foundThumb != null) formatThumbUrl(foundThumb.attr("abs:href")) else getFolderThumb(url)
@@ -554,7 +557,7 @@ class DhakaFlix2(
             description = document.selectFirst("p.storyline")?.text()?.trim() ?: ""
             
             // 1. Look for images already rendered as tags
-            val thumbElement = document.selectFirst("img[src~=(?i)a11|a22|a_al|a0_al|a_vl|a0_vl], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav|folder|fallback|/_h5ai/])")
+            val thumbElement = document.selectFirst("img[src~=(?i)a11|a22|a4e|a_al|a0_al|a_vl|a0_vl|a_v1], img:not([src~=(?i)back|parent|icon|/icons/|menu|nav|folder|fallback|/_h5ai/])")
 
             var thumbUrl = thumbElement?.let { 
                 it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
@@ -567,7 +570,7 @@ class DhakaFlix2(
                 // Try to find known good names first
                 val foundThumb = allLinks.find { 
                     val href = it.attr("href").lowercase()
-                    href.contains(Regex("a11|a22|a_al|a0_al|a_vl|a0_vl")) &&
+                    href.contains(Regex("a11|a22|a4e|a_al|a0_al|a_vl|a0_vl|a_v1")) &&
                     (href.endsWith(".jpg") || href.endsWith(".jpeg") || href.endsWith(".png") || href.endsWith(".webp"))
                 }
                 
