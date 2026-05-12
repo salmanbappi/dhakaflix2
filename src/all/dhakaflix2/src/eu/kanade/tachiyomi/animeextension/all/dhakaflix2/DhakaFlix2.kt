@@ -457,10 +457,10 @@ class DhakaFlix2(
 
     override fun popularAnimeRequest(page: Int): Request {
         val path = when {
-            baseUrl.contains("50.14") -> "$serverPath/Hindi%20Movies/"
+            baseUrl.contains("50.14") -> "$serverPath/Hindi%20Movies/(2026)/"
             baseUrl.contains("50.12") -> "$serverPath/TV-WEB-Series/TV%20Series%20%E2%99%A5%20%20A%20%20%E2%80%94%20%20L/"
             baseUrl.contains("50.9") -> "$serverPath/Anime%20%26%20Cartoon%20TV%20Series/Anime-TV%20Series%20%E2%99%A5%20%20A%20%20%E2%80%94%20%20F/"
-            baseUrl.contains("50.7") -> "$serverPath/English%20Movies/"
+            baseUrl.contains("50.7") -> "$serverPath/English%20Movies/(2026)/"
             else -> ""
         }
         return GET("$baseUrl/$path", headers)
