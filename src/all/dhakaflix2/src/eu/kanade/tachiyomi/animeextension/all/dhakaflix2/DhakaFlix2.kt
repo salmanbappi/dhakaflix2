@@ -182,6 +182,12 @@ class DhakaFlix2(
         return sb.toString()
     }
 
+    private fun formatThumbUrl(url: String): String {
+        if (url.isBlank()) return ""
+        val fixed = fixUrl(url)
+        return if (fixed.contains("?")) "$fixed&cb=1" else "$fixed?cb=1"
+    }
+
     private val enrichmentSemaphore = Semaphore(5)
 
     private suspend fun enrichAnimes(animes: List<SAnime>) {
@@ -224,7 +230,7 @@ class DhakaFlix2(
                                     
                                     val finalThumbUrl = (foundThumb ?: firstAnyImage)?.attr("abs:href") ?: ""
                                     if (finalThumbUrl.isNotEmpty()) {
-                                        anime.thumbnail_url = fixUrl(finalThumbUrl)
+                                        anime.thumbnail_url = formatThumbUrl(finalThumbUrl)
                                     }
                                 } catch (e: Exception) {}
                             }
@@ -476,7 +482,7 @@ class DhakaFlix2(
                     val thumbUrl = thumbElement?.let { 
                         it.attr("abs:data-src").ifEmpty { it.attr("abs:data-lazy-src").ifEmpty { it.attr("abs:src") } }
                     } ?: ""
-                    thumbnail_url = if (thumbUrl.isNotEmpty()) fixUrl(thumbUrl) else ""
+                    thumbnail_url = if (thumbUrl.isNotEmpty()) formatThumbUrl(thumbUrl) else ""
                 }
             }
         } else {
@@ -496,7 +502,7 @@ class DhakaFlix2(
                             imgHref.lowercase().contains(Regex("a11|a22|a_al|a0_al|a_vl|a0_vl"))
                         } ?: pageImageLinks.find { it.attr("abs:href").startsWith(currentDir) }
                         
-                        thumbnail_url = if (foundThumb != null) fixUrl(foundThumb.attr("abs:href")) else getFolderThumb(url)
+                        thumbnail_url = if (foundThumb != null) formatThumbUrl(foundThumb.attr("abs:href")) else getFolderThumb(url)
                     }
                 } else null
             }
@@ -586,7 +592,7 @@ class DhakaFlix2(
                 thumbUrl = getFolderThumb(response.request.url.toString())
             }
             
-            thumbnail_url = if (thumbUrl.isNotEmpty()) fixUrl(thumbUrl) else ""
+            thumbnail_url = if (thumbUrl.isNotEmpty()) formatThumbUrl(thumbUrl) else ""
         }
     }
 
