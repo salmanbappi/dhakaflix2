@@ -213,29 +213,55 @@ class DhakaFlix2(
                                     }
                                 }
                                 
-                                // 2. SMART RESOLVE: Fetch folder HTML to find the REAL image name
+                                // 2. SMART RESOLVE: Fetch folder HTML and scan for thumbnails WITHOUT loading the whole page into memory
                                 try {
-                                    val doc = client.newCall(GET(fixUrl(anime.url), headers)).execute().asJsoup()
-                                    val allLinks = doc.select("a")
-                                    
-                                    val foundThumb = allLinks.find { 
-                                        val href = it.attr("href").lowercase()
-                                        href.contains(Regex("a11|a22|a4e|afull|a_al|a0_al|a_vl|a0_vl|a_v1")) &&
-                                        (href.endsWith(".jpg") || href.endsWith(".jpeg") || href.endsWith(".png") || href.endsWith(".webp"))
-                                    }
-                                    
-                                    val firstAnyImage = if (foundThumb == null) {
-                                        allLinks.find { 
-                                            val href = it.attr("href").lowercase()
-                                            (href.endsWith(".jpg") || href.endsWith(".jpeg") || href.endsWith(".png") || href.endsWith(".webp")) &&
-                                            !href.contains(Regex("parent|icon|menu|nav|/_h5ai/"))
+                                    val response = client.newCall(GET(fixUrl(anime.url), headers)).execute()
+                                    if (response.isSuccessful) {
+                                        val source = response.body?.source()
+                                        if (source != null) {
+                                            var foundThumbUrl: String? = null
+                                            var firstAnyImageUrl: String? = null
+                                            val thumbRegex = Regex("href=\"([^\"]+(?:a11|a22|a4e|afull|a_al|a0_al|a_vl|a0_vl|a_v1)[^\"]*\\.(?:jpg|jpeg|png|webp))\"", RegexOption.IGNORE_CASE)
+                                            val anyImageRegex = Regex("href=\"([^\"]+\\.(?:jpg|jpeg|png|webp))\"", RegexOption.IGNORE_CASE)
+                                            val excludeRegex = Regex("parent|icon|menu|nav|/_h5ai/", RegexOption.IGNORE_CASE)
+
+                                            var bytesRead = 0L
+                                            val maxScanBytes = 512 * 1024L // 512KB limit
+
+                                            while (bytesRead < maxScanBytes) {
+                                                val line = source.readUtf8Line() ?: break
+                                                bytesRead += line.length
+
+                                                // Check for high-quality thumb first
+                                                val thumbMatch = thumbRegex.find(line)
+                                                if (thumbMatch != null) {
+                                                    foundThumbUrl = thumbMatch.groupValues[1]
+                                                    break // STOP IMMEDIATELY
+                                                }
+
+                                                // Keep track of any image as fallback
+                                                if (firstAnyImageUrl == null) {
+                                                    val anyMatch = anyImageRegex.find(line)
+                                                    if (anyMatch != null) {
+                                                        val url = anyMatch.groupValues[1]
+                                                        if (!excludeRegex.containsMatchIn(url)) {
+                                                            firstAnyImageUrl = url
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            
+                                            val finalThumbUrl = foundThumbUrl ?: firstAnyImageUrl
+                                            if (finalThumbUrl != null) {
+                                                val baseUrl = response.request.url.toString()
+                                                val absoluteUrl = response.request.url.resolve(finalThumbUrl)?.toString() ?: ""
+                                                if (absoluteUrl.isNotEmpty()) {
+                                                    anime.thumbnail_url = formatThumbUrl(absoluteUrl)
+                                                }
+                                            }
                                         }
-                                    } else null
-                                    
-                                    val finalThumbUrl = (foundThumb ?: firstAnyImage)?.attr("abs:href") ?: ""
-                                    if (finalThumbUrl.isNotEmpty()) {
-                                        anime.thumbnail_url = formatThumbUrl(finalThumbUrl)
                                     }
+                                    response.close()
                                 } catch (e: Exception) {}
                             }
                         }
