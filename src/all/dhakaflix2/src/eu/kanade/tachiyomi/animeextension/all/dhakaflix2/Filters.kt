@@ -34,6 +34,7 @@ object Filters {
                 if (alphabet != "Any") {
                     val subPath = when (alphabet) {
                         "0-9" -> "TV Series \u2605  0  \u2014  9"
+                        "A-F / A-L" -> "TV Series \u2665  A  \u2014  L"
                         "G-M / M-R" -> "TV Series \u2666  M  \u2014  R"
                         "N-S / S-Z" -> "TV Series \u2666  S  \u2014  Z"
                         else -> "TV Series \u2665  A  \u2014  L" 
