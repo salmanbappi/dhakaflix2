@@ -33,11 +33,11 @@ object Filters {
             "TV Series" -> {
                 if (alphabet != "Any") {
                     val subPath = when (alphabet) {
-                        "0-9" -> "TV Series \u2605  0  \u2014  9"
-                        "A-F / A-L" -> "TV Series \u2665  A  \u2014  L"
-                        "G-M / M-R" -> "TV Series \u2666  M  \u2014  R"
-                        "N-S / S-Z", "T-Z" -> "TV Series \u2666  S  \u2014  Z"
-                        else -> "TV Series \u2665  A  \u2014  L" 
+                        "0-9" -> "TV Series 0-9"
+                        "A-F / A-L" -> "TV Series A-L"
+                        "G-M / M-R" -> "TV Series M-R"
+                        "N-S / S-Z", "T-Z" -> "TV Series S-Z"
+                        else -> "TV Series A-L" 
                     }
                     return "$fullBaseUrl/TV-WEB-Series/$subPath/"
                 }
@@ -47,12 +47,12 @@ object Filters {
             "Anime-TV Series" -> {
                 if (alphabet != "Any") {
                     val subPath = when (alphabet) {
-                        "0-9" -> "Anime-TV Series \u2605  0  \u2014  9"
-                        "A-F / A-L" -> "Anime-TV Series \u2665  A  \u2014  F"
-                        "G-M / M-R" -> "Anime-TV Series \u2665  G  \u2014  M"
-                        "N-S / S-Z" -> "Anime-TV Series \u2666  N  \u2014  S"
-                        "T-Z" -> "Anime-TV Series \u2666  T  \u2014  Z"
-                        else -> "Anime-TV Series \u2665  A  \u2014  F"
+                        "0-9" -> "Anime-TV Series 0-9"
+                        "A-F / A-L" -> "Anime-TV Series A-F"
+                        "G-M / M-R" -> "Anime-TV Series G-M"
+                        "N-S / S-Z" -> "Anime-TV Series N -S"
+                        "T-Z" -> "Anime-TV Series T-Z"
+                        else -> "Anime-TV Series A-F"
                     }
                     return "$fullBaseUrl/Anime & Cartoon TV Series/$subPath/"
                 }
