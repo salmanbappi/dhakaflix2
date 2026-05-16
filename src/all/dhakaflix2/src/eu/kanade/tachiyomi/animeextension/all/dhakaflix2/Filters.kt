@@ -50,7 +50,8 @@ object Filters {
                         "0-9" -> "Anime-TV Series \u2605  0  \u2014  9"
                         "A-F / A-L" -> "Anime-TV Series \u2665  A  \u2014  F"
                         "G-M / M-R" -> "Anime-TV Series \u2665  G  \u2014  M"
-                        "N-S / S-Z", "T-Z" -> "Anime-TV Series \u2666  N  \u2014  S"
+                        "N-S / S-Z" -> "Anime-TV Series \u2666  N  \u2014  S"
+                        "T-Z" -> "Anime-TV Series \u2666  T  \u2014  Z"
                         else -> "Anime-TV Series \u2665  A  \u2014  F"
                     }
                     return "$fullBaseUrl/Anime & Cartoon TV Series/$subPath/"
